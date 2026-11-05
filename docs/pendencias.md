@@ -23,9 +23,7 @@
 - Não consegui abrir o link de agendamento (rede deste ambiente bloqueia).
 
 ## Perguntas em aberto
-1. Cidade do endereço (não vai na mensagem por enquanto).
-2. E-mail(s) que recebem o aviso e se vamos usar o Resend.
-3. Formas de pagamento (opcional).
+1. Formas de pagamento (opcional).
 
 ## Limitações conhecidas
 - Fora da janela de 24 h só modelo aprovado é entregue; a tela recusa
