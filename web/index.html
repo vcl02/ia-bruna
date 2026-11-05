@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conversas do salão</title>
+<style>
+  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#666; --line:#ddd; --card:#fff; --cliente:#fff; --bot:#e8f0fe; --humano:#e6f4ea; --alerta:#b3261e; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121212; --fg:#eee; --muted:#aaa; --line:#333; --card:#1e1e1e; --cliente:#1e1e1e; --bot:#1c2a44; --humano:#1d3326; --alerta:#f28b82; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; flex:1; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); cursor:pointer; }
+  input, textarea { font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); width:100%; }
+  #login { max-width:320px; margin:48px auto; padding:0 16px; display:grid; gap:8px; }
+  #app { display:grid; grid-template-columns:300px 1fr; height:calc(100vh - 49px); }
+  #lista { border-right:1px solid var(--line); overflow-y:auto; }
+  .item { padding:10px 16px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .item.ativo { background:var(--bot); }
+  .item small { color:var(--muted); display:block; }
+  .tag { font-size:12px; padding:1px 6px; border-radius:10px; border:1px solid currentColor; margin-left:4px; }
+  .alerta { color:var(--alerta); }
+  #conversa { display:flex; flex-direction:column; min-width:0; }
+  #topo { padding:10px 16px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  #topo strong { flex:1; }
+  #msgs { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px; }
+  .msg { max-width:75%; padding:8px 10px; border-radius:8px; border:1px solid var(--line); white-space:pre-wrap; word-wrap:break-word; }
+  .msg.cliente { background:var(--cliente); align-self:flex-start; }
+  .msg.bot { background:var(--bot); align-self:flex-end; }
+  .msg.humano { background:var(--humano); align-self:flex-end; }
+  .msg small { display:block; color:var(--muted); font-size:12px; margin-top:4px; }
+  #envio { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--line); }
+  #envio textarea { height:60px; resize:vertical; }
+  #falhas { padding:16px; overflow:auto; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td, th { border:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
+  .oculto { display:none !important; }
+  @media (max-width:700px) { #app { grid-template-columns:1fr; } #lista { max-height:35vh; border-right:0; border-bottom:1px solid var(--line); } .msg { max-width:90%; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Conversas do salão</h1>
+  <button id="btnFalhas" class="oculto">Falhas de envio</button>
+  <button id="btnSair" class="oculto">Sair</button>
+</header>
+
+<form id="login">
+  <input id="email" type="email" placeholder="e-mail" required autocomplete="username">
+  <input id="senha" type="password" placeholder="senha" required autocomplete="current-password">
+  <button>Entrar</button>
+  <p id="erroLogin" class="alerta"></p>
+</form>
+
+<div id="app" class="oculto">
+  <nav id="lista"></nav>
+  <section id="conversa">
+    <div id="topo"><strong>Escolha uma conversa</strong></div>
+    <div id="msgs"></div>
+    <form id="envio" class="oculto">
+      <textarea id="texto" placeholder="Responder como humana (pausa o bot desta conversa)"></textarea>
+      <button>Enviar</button>
+    </form>
+    <div id="falhas" class="oculto"></div>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+const sb = supabase.createClient(window.PAINEL.supabaseUrl, window.PAINEL.supabaseAnonKey);
+const $ = (id) => document.getElementById(id);
+let atual = null;
+
+function el(tag, attrs = {}, ...filhos) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? e.className = v : e.setAttribute(k, v);
+  for (const f of filhos) if (f != null) e.append(f); // append de string = texto, sem HTML
+  return e;
+}
+const hora = (s) => s ? new Date(s).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "";
+
+async function carregarLista() {
+  const { data, error } = await sb.from("conversas")
+    .select("id, wa_id, nome_perfil, bot_pausado, precisa_humano, motivo_humano, atualizado_em")
+    .order("precisa_humano", { ascending: false }).order("atualizado_em", { ascending: false }).limit(200);
+  if (error) return alert(error.message);
+  $("lista").replaceChildren(...data.map((c) => {
+    const i = el("div", { class: "item" + (atual?.id === c.id ? " ativo" : "") },
+      c.nome_perfil || c.wa_id,
+      c.precisa_humano ? el("span", { class: "tag alerta" }, "precisa de você") : null,
+      c.bot_pausado && !c.precisa_humano ? el("span", { class: "tag" }, "bot pausado") : null,
+      el("small", {}, hora(c.atualizado_em)));
+    i.onclick = () => abrir(c);
+    return i;
+  }));
+  if (atual) { const novo = data.find((c) => c.id === atual.id); if (novo) { atual = novo; desenharTopo(); } }
+}
+
+function desenharTopo() {
+  const c = atual;
+  const pausa = el("button", {}, c.bot_pausado ? "Retomar bot" : "Pausar bot");
+  pausa.onclick = async () => {
+    const mudanca = c.bot_pausado ? { bot_pausado: false, precisa_humano: false, motivo_humano: null } : { bot_pausado: true };
+    const { error } = await sb.from("conversas").update(mudanca).eq("id", c.id);
+    if (error) return alert(error.message);
+    await carregarLista();
+  };
+  $("topo").replaceChildren(
+    el("strong", {}, `${c.nome_perfil || ""} ${c.wa_id}`),
+    c.precisa_humano ? el("span", { class: "alerta" }, c.motivo_humano || "precisa de humano") : null,
+    pausa);
+}
+
+async function abrir(c) {
+  atual = c;
+  $("falhas").classList.add("oculto"); $("msgs").classList.remove("oculto"); $("envio").classList.remove("oculto");
+  desenharTopo();
+  await carregarMsgs();
+  await carregarLista();
+}
+
+async function carregarMsgs() {
+  if (!atual) return;
+  const { data, error } = await sb.from("mensagens").select("autor, tipo, texto, status, erro, criado_em")
+    .eq("conversa_id", atual.id).order("criado_em").limit(500);
+  if (error) return alert(error.message);
+  const caixa = $("msgs");
+  const noFim = caixa.scrollHeight - caixa.scrollTop - caixa.clientHeight < 40;
+  caixa.replaceChildren(...data.map((m) => el("div", { class: "msg " + m.autor },
+    m.texto ?? `[${m.tipo}]`,
+    el("small", { class: m.erro ? "alerta" : "" },
+      `${m.autor} · ${hora(m.criado_em)}${m.status ? " · " + m.status : ""}${m.erro ? " · erro: " + JSON.stringify(m.erro) : ""}`))));
+  if (noFim) caixa.scrollTop = caixa.scrollHeight;
+}
+
+$("envio").onsubmit = async (e) => {
+  e.preventDefault();
+  const texto = $("texto").value.trim();
+  if (!texto || !atual) return;
+  const { data, error } = await sb.functions.invoke("responder", { body: { conversa_id: atual.id, texto } });
+  if (error) {
+    let msg = error.message;
+    try { msg = (await error.context.json()).erro || msg; } catch {}
+    return alert(msg);
+  }
+  $("texto").value = "";
+  await carregarMsgs(); await carregarLista();
+};
+
+$("btnFalhas").onclick = async () => {
+  atual = null;
+  $("msgs").classList.add("oculto"); $("envio").classList.add("oculto"); $("falhas").classList.remove("oculto");
+  $("topo").replaceChildren(el("strong", {}, "Falhas de envio (statuses com erro)"));
+  const { data, error } = await sb.from("falhas_de_envio").select("*").limit(200);
+  if (error) return alert(error.message);
+  const cols = ["recebido_em", "tipo_mensagem", "codigo", "titulo", "mensagem", "detalhes", "recipient_id"];
+  $("falhas").replaceChildren(data.length === 0 ? "Nenhuma falha registrada." :
+    el("table", {}, el("tr", {}, ...cols.map((c) => el("th", {}, c))),
+      ...data.map((r) => el("tr", {}, ...cols.map((c) => el("td", {}, c === "recebido_em" ? hora(r[c]) : String(r[c] ?? "")))))));
+};
+
+$("login").onsubmit = async (e) => {
+  e.preventDefault();
+  const { error } = await sb.auth.signInWithPassword({ email: $("email").value, password: $("senha").value });
+  $("erroLogin").textContent = error ? error.message : "";
+};
+$("btnSair").onclick = () => sb.auth.signOut();
+
+let timer = null;
+sb.auth.onAuthStateChange((_ev, sessao) => {
+  const logado = !!sessao;
+  $("login").classList.toggle("oculto", logado);
+  $("app").classList.toggle("oculto", !logado);
+  $("btnSair").classList.toggle("oculto", !logado);
+  $("btnFalhas").classList.toggle("oculto", !logado);
+  clearInterval(timer);
+  if (logado) { carregarLista(); timer = setInterval(() => { carregarLista(); carregarMsgs(); }, 15000); }
+});
+</script>
+</body>
+</html>

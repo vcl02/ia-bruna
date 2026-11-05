@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "test": "deno test --allow-env supabase/tests",
+    "check": "deno check supabase/functions/whatsapp-webhook/index.ts supabase/functions/responder/index.ts"
+  },
+  "lock": false
+}

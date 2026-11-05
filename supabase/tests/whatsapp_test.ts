@@ -1,0 +1,75 @@
+import { assertEquals } from "jsr:@std/assert@1.0.13";
+import { dentroDaJanela, enviarTexto, lerEventos } from "../functions/_shared/whatsapp.ts";
+
+const PNID = "111";
+
+function payload(value: unknown, phoneNumberId = PNID, field = "messages") {
+  return {
+    object: "whatsapp_business_account",
+    entry: [{ id: "waba", changes: [{ field, value: { messaging_product: "whatsapp", metadata: { phone_number_id: phoneNumberId }, ...value as object } }] }],
+  };
+}
+
+Deno.test("lê mensagem de texto com nome do perfil", () => {
+  const ev = lerEventos(payload({
+    contacts: [{ wa_id: "5511999990000", profile: { name: "Ana" } }],
+    messages: [{ id: "wamid.1", from: "5511999990000", timestamp: "1730000000", type: "text", text: { body: "Oi" } }],
+  }), PNID);
+  assertEquals(ev.mensagens.length, 1);
+  assertEquals(ev.mensagens[0].texto, "Oi");
+  assertEquals(ev.mensagens[0].nomePerfil, "Ana");
+  assertEquals(ev.mensagens[0].recebidaEm.toISOString(), new Date(1730000000 * 1000).toISOString());
+});
+
+Deno.test("mídia vira mensagem sem texto", () => {
+  const ev = lerEventos(payload({
+    messages: [{ id: "wamid.2", from: "55", timestamp: "1", type: "audio", audio: { id: "x" } }],
+  }), PNID);
+  assertEquals(ev.mensagens[0].tipo, "audio");
+  assertEquals(ev.mensagens[0].texto, null);
+});
+
+Deno.test("lê status com erro", () => {
+  const ev = lerEventos(payload({
+    statuses: [{ id: "wamid.3", status: "failed", timestamp: "1730000000", recipient_id: "55", errors: [{ code: 12345, title: "t" }] }],
+  }), PNID);
+  assertEquals(ev.statuses.length, 1);
+  assertEquals(ev.statuses[0].status, "failed");
+  assertEquals((ev.statuses[0].erros as { code: number }[])[0].code, 12345);
+});
+
+Deno.test("ignora outro número e outros campos", () => {
+  assertEquals(lerEventos(payload({ messages: [{ id: "a", from: "b", type: "text" }] }, "999"), PNID).ignorados, 1);
+  assertEquals(lerEventos(payload({}, PNID, "account_update"), PNID).ignorados, 1);
+  assertEquals(lerEventos(null, PNID).mensagens.length, 0);
+});
+
+Deno.test("janela de 24 h", () => {
+  const agora = new Date("2026-11-05T12:00:00Z");
+  assertEquals(dentroDaJanela(new Date("2026-11-04T12:00:01Z"), agora), true);
+  assertEquals(dentroDaJanela(new Date("2026-11-04T11:59:59Z"), agora), false);
+  assertEquals(dentroDaJanela(null, agora), false);
+});
+
+Deno.test("envio: monta a requisição e lê o wamid", async () => {
+  let pedido: Request | undefined;
+  const fakeFetch = (async (url: string, init: RequestInit) => {
+    pedido = new Request(url, init);
+    return new Response(JSON.stringify({ messages: [{ id: "wamid.out" }] }), { status: 200 });
+  }) as typeof fetch;
+  const r = await enviarTexto({ token: "T", phoneNumberId: PNID, graphApiVersion: "vX" }, "55", "olá", fakeFetch);
+  assertEquals(r.ok, true);
+  assertEquals(r.wamid, "wamid.out");
+  assertEquals(pedido!.url, "https://graph.facebook.com/vX/111/messages");
+  assertEquals(pedido!.headers.get("authorization"), "Bearer T");
+  const body = await pedido!.json();
+  assertEquals(body.to, "55");
+  assertEquals(body.text.body, "olá");
+});
+
+Deno.test("envio: erro da API vira ok=false", async () => {
+  const fakeFetch = (async () => new Response(JSON.stringify({ error: { code: 1 } }), { status: 400 })) as typeof fetch;
+  const r = await enviarTexto({ token: "T", phoneNumberId: PNID, graphApiVersion: "vX" }, "55", "x", fakeFetch);
+  assertEquals(r.ok, false);
+  assertEquals(r.httpStatus, 400);
+});
