@@ -2,18 +2,22 @@ import { assertEquals } from "jsr:@std/assert@1.0.13";
 import { processarMensagem, type Conversa, type DepsBot, type Repositorio } from "../functions/_shared/bot.ts";
 import type { Atendente, DecisaoLLM, ItemHistorico } from "../functions/_shared/llm.ts";
 import type { MensagemRecebida, ResultadoEnvio } from "../functions/_shared/whatsapp.ts";
-import { SALAO } from "../functions/_shared/salao.ts";
-import { SALAO_TESTE } from "./salao_teste.ts";
+import { SALAO, type Servico } from "../functions/_shared/salao.ts";
+import { SERVICOS_TESTE } from "./salao_teste.ts";
 
 class RepoFake implements Repositorio {
-  c: Conversa = { id: "c1", waId: "55", botPausado: false };
+  c: Conversa = { id: "c1", waId: "55", nomePerfil: "Ana", botPausado: false };
   ultima = "wamid.1";
+  servicos: Servico[] = SERVICOS_TESTE;
+  jaRespondeu = true;
   saidas: { autor: string; texto: string }[] = [];
   humano: string | null = null;
   pausarDuranteLLM = false;
   conversa() { return Promise.resolve({ ...this.c }); }
   historico(): Promise<ItemHistorico[]> { return Promise.resolve([{ autor: "cliente", texto: "oi" }]); }
   ultimaEntradaWamid() { return Promise.resolve(this.ultima); }
+  temSaida() { return Promise.resolve(this.jaRespondeu); }
+  servicosAtivos() { return Promise.resolve(this.servicos); }
   registrarSaida(_c: string, autor: "bot" | "humano", texto: string) { this.saidas.push({ autor, texto }); return Promise.resolve(); }
   marcarHumano(_c: string, motivo: string) { this.humano = motivo; this.c.botPausado = true; return Promise.resolve(); }
 }
@@ -22,9 +26,10 @@ function msg(p: Partial<MensagemRecebida> = {}): MensagemRecebida {
   return { wamid: "wamid.1", waId: "55", nomePerfil: null, tipo: "text", texto: "Quanto custa a escova?", recebidaEm: new Date(), ...p };
 }
 
-function montar(decisao: DecisaoLLM | Error, salao = SALAO_TESTE) {
+function montar(decisao: DecisaoLLM | Error) {
   const repo = new RepoFake();
   const enviados: string[] = [];
+  const avisos: string[] = [];
   let chamadasLLM = 0;
   const atendente: Atendente = {
     responder: () => {
@@ -34,12 +39,13 @@ function montar(decisao: DecisaoLLM | Error, salao = SALAO_TESTE) {
     },
   };
   const deps: DepsBot = {
-    repo, atendente, salao,
+    repo, atendente, salao: SALAO,
     enviar: (_p, t): Promise<ResultadoEnvio> => { enviados.push(t); return Promise.resolve({ ok: true, wamid: "w", httpStatus: 200, erro: null }); },
+    avisar: (_c, motivo) => { avisos.push(motivo); return Promise.resolve(); },
     esperar: () => Promise.resolve(),
     log: () => {},
   };
-  return { repo, deps, enviados, llm: () => chamadasLLM };
+  return { repo, deps, enviados, avisos, llm: () => chamadasLLM };
 }
 
 const ok: DecisaoLLM = { resposta: "A escova é R$ 50!", passar_para_humano: false, motivo: "", intencao: "duvida" };
@@ -49,6 +55,14 @@ Deno.test("responde com a LLM quando está tudo configurado", async () => {
   assertEquals(await processarMensagem(t.deps, "c1", msg()), "respondido");
   assertEquals(t.enviados, ["A escova é R$ 50!"]);
   assertEquals(t.repo.humano, null);
+  assertEquals(t.avisos.length, 0);
+});
+
+Deno.test("primeira resposta da conversa leva a apresentação", async () => {
+  const t = montar(ok);
+  t.repo.jaRespondeu = false;
+  await processarMensagem(t.deps, "c1", msg());
+  assertEquals(t.enviados, [`${SALAO.mensagemApresentacao}\n\nA escova é R$ 50!`]);
 });
 
 Deno.test("conversa pausada: não responde nem chama a LLM", async () => {
@@ -65,12 +79,13 @@ Deno.test("mensagem mais recente na fila: esta não responde", async () => {
   assertEquals(t.enviados.length, 0);
 });
 
-Deno.test("áudio passa para humano sem chamar a LLM", async () => {
+Deno.test("áudio passa para humano, avisa a equipe e não chama a LLM", async () => {
   const t = montar(ok);
   assertEquals(await processarMensagem(t.deps, "c1", msg({ tipo: "audio", texto: null })), "passado_para_humano");
   assertEquals(t.llm(), 0);
   assertEquals(t.repo.c.botPausado, true);
-  assertEquals(t.enviados, [SALAO_TESTE.mensagemPassagemHumano]);
+  assertEquals(t.enviados, [SALAO.mensagemPassagemHumano]);
+  assertEquals(t.avisos.length, 1);
 });
 
 Deno.test("pedido de atendente passa para humano", async () => {
@@ -79,8 +94,9 @@ Deno.test("pedido de atendente passa para humano", async () => {
   assertEquals(t.llm(), 0);
 });
 
-Deno.test("dados do salão incompletos: não chama a LLM", async () => {
-  const t = montar(ok, SALAO);
+Deno.test("sem serviços cadastrados: não chama a LLM", async () => {
+  const t = montar(ok);
+  t.repo.servicos = [];
   assertEquals(await processarMensagem(t.deps, "c1", msg()), "passado_para_humano");
   assertEquals(t.llm(), 0);
 });
@@ -91,11 +107,19 @@ Deno.test("falha da LLM passa para humano", async () => {
   assertEquals(t.repo.c.botPausado, true);
 });
 
-Deno.test("LLM pede humano: envia a resposta e pausa", async () => {
-  const t = montar({ resposta: "Vou chamar a Fulana", passar_para_humano: true, motivo: "remarcação", intencao: "remarcar_ou_cancelar" });
+Deno.test("LLM pede humano: envia a resposta, pausa e avisa", async () => {
+  const t = montar({ resposta: "Vou chamar a Bruna", passar_para_humano: true, motivo: "remarcação", intencao: "remarcar_ou_cancelar" });
   assertEquals(await processarMensagem(t.deps, "c1", msg({ texto: "preciso remarcar" })), "passado_para_humano");
   assertEquals(t.repo.humano, "remarcação");
-  assertEquals(t.enviados, ["Vou chamar a Fulana"]);
+  assertEquals(t.enviados, ["Vou chamar a Bruna"]);
+  assertEquals(t.avisos, ["remarcação"]);
+});
+
+Deno.test("falha no aviso não impede a resposta à cliente", async () => {
+  const t = montar(ok);
+  t.deps.avisar = () => Promise.reject(new Error("meta fora"));
+  assertEquals(await processarMensagem(t.deps, "c1", msg({ tipo: "image", texto: null })), "passado_para_humano");
+  assertEquals(t.enviados.length, 1);
 });
 
 Deno.test("pausado enquanto a LLM pensava: descarta a resposta", async () => {

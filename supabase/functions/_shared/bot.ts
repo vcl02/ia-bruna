@@ -2,12 +2,13 @@
 // tudo entra por `DepsBot`, o que permite testar com dublês.
 
 import type { MensagemRecebida, ResultadoEnvio } from "./whatsapp.ts";
-import { camposFaltando, type DadosSalao } from "./salao.ts";
+import { camposFaltando, type DadosSalao, type Servico } from "./salao.ts";
 import type { Atendente, ItemHistorico } from "./llm.ts";
 
 export interface Conversa {
   id: string;
   waId: string;
+  nomePerfil: string | null;
   botPausado: boolean;
 }
 
@@ -15,6 +16,8 @@ export interface Repositorio {
   conversa(id: string): Promise<Conversa>;
   historico(conversaId: string, limite: number): Promise<ItemHistorico[]>;
   ultimaEntradaWamid(conversaId: string): Promise<string | null>;
+  temSaida(conversaId: string): Promise<boolean>;
+  servicosAtivos(): Promise<Servico[]>;
   registrarSaida(conversaId: string, autor: "bot" | "humano", texto: string, envio: ResultadoEnvio): Promise<void>;
   marcarHumano(conversaId: string, motivo: string): Promise<void>;
 }
@@ -24,6 +27,8 @@ export interface DepsBot {
   atendente: Atendente;
   salao: DadosSalao;
   enviar(para: string, texto: string): Promise<ResultadoEnvio>;
+  /** Avisa a equipe (por WhatsApp) que uma conversa precisa de alguém. */
+  avisar(conversa: Conversa, motivo: string): Promise<void>;
   esperar(ms: number): Promise<void>;
   log(evento: string, dados?: Record<string, unknown>): void;
 }
@@ -39,12 +44,27 @@ const PEDIDO_HUMANO = /\b(atendente|humano|humana|pessoa de verdade|falar com (a
 export const ESPERA_AGRUPAR_MS = 4000; // junta mensagens mandadas em sequência
 const LIMITE_HISTORICO = 20;
 
+async function enviarComApresentacao(deps: DepsBot, c: Conversa, texto: string) {
+  const primeira = !(await deps.repo.temSaida(c.id));
+  const final = primeira ? `${deps.salao.mensagemApresentacao}\n\n${texto}` : texto;
+  const envio = await deps.enviar(c.waId, final);
+  await deps.repo.registrarSaida(c.id, "bot", final, envio);
+  return envio;
+}
+
+async function marcarEAvisar(deps: DepsBot, c: Conversa, motivo: string) {
+  await deps.repo.marcarHumano(c.id, motivo);
+  try {
+    await deps.avisar(c, motivo);
+  } catch (e) {
+    deps.log("erro_aviso", { conversa: c.id, erro: String(e) });
+  }
+}
+
 async function passarParaHumano(deps: DepsBot, c: Conversa, motivo: string): Promise<Resultado> {
   // Pausa antes de enviar: se o envio falhar, o bot já não volta a responder.
-  await deps.repo.marcarHumano(c.id, motivo);
-  const texto = deps.salao.mensagemPassagemHumano;
-  const envio = await deps.enviar(c.waId, texto);
-  await deps.repo.registrarSaida(c.id, "bot", texto, envio);
+  await marcarEAvisar(deps, c, motivo);
+  const envio = await enviarComApresentacao(deps, c, deps.salao.mensagemPassagemHumano);
   deps.log("passado_para_humano", { conversa: c.id, motivo, envio_ok: envio.ok });
   return "passado_para_humano";
 }
@@ -69,7 +89,8 @@ export async function processarMensagem(
   if (PEDIDO_HUMANO.test(msg.texto)) {
     return passarParaHumano(deps, c, "cliente pediu atendimento humano");
   }
-  const faltando = camposFaltando(deps.salao);
+  const servicos = await deps.repo.servicosAtivos();
+  const faltando = camposFaltando(deps.salao, servicos);
   if (faltando.length > 0) {
     return passarParaHumano(deps, c, `dados do salão incompletos: ${faltando.join(", ")}`);
   }
@@ -77,7 +98,7 @@ export async function processarMensagem(
   let decisao;
   try {
     const historico = await deps.repo.historico(c.id, LIMITE_HISTORICO);
-    decisao = await deps.atendente.responder(historico);
+    decisao = await deps.atendente.responder(historico, servicos);
   } catch (e) {
     deps.log("erro_llm", { conversa: c.id, erro: String(e) });
     return passarParaHumano(deps, c, "falha ao gerar resposta automática");
@@ -87,11 +108,10 @@ export async function processarMensagem(
   if ((await deps.repo.conversa(c.id)).botPausado) return "pausado";
 
   if (decisao.passar_para_humano) {
-    await deps.repo.marcarHumano(c.id, decisao.motivo || "decisão do bot");
+    await marcarEAvisar(deps, c, decisao.motivo || "decisão do bot");
   }
   const texto = decisao.resposta.trim() || deps.salao.mensagemPassagemHumano;
-  const envio = await deps.enviar(c.waId, texto);
-  await deps.repo.registrarSaida(c.id, "bot", texto, envio);
+  const envio = await enviarComApresentacao(deps, c, texto);
   deps.log("respondido", { conversa: c.id, intencao: decisao.intencao, humano: decisao.passar_para_humano, envio_ok: envio.ok });
   return decisao.passar_para_humano ? "passado_para_humano" : "respondido";
 }

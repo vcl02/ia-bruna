@@ -19,8 +19,8 @@
    Guarde o `messages[0].id` (wamid) da resposta.
 2. No Supabase, consultar:
    ```sql
-   select * from status_mensagens where wamid = '<wamid>' order by recebido_em;
-   select * from falhas_de_envio limit 20;
+   select * from salao_status where wamid = '<wamid>' order by recebido_em;
+   select * from salao_falhas_de_envio limit 20;
    ```
    Ou abrir "Falhas de envio" na tela de conversas.
 3. Pegar o `codigo`, `titulo` e `detalhes` do erro e conferir na tabela

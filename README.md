@@ -4,8 +4,10 @@ Bot que atende as clientes do salão pelo WhatsApp (Cloud API da Meta):
 tira dúvidas com base numa lista fixa de dados, entende o que a cliente
 quer, manda o link de agendamento e passa para uma pessoa quando precisa.
 
-Projeto separado do hub pessoal (`vcl02/hub`): banco, segredos e código
-próprios.
+Código separado do hub pessoal (`vcl02/hub`). **Temporariamente, para
+testes, roda dentro do projeto Supabase do hub**, isolado por prefixo:
+tabelas `salao_*`, funções `salao-*`, secrets `SALAO_*`. Antes de atender
+clientes reais, mudar para um projeto próprio (ver `docs/decisoes.md`).
 
 ## Estrutura
 
@@ -13,28 +15,35 @@ próprios.
 supabase/
   migrations/                 esquema, RLS e visão de falhas de envio
   functions/
-    whatsapp-webhook/         webhook da Meta (verificação, assinatura, gravação, bot)
-    responder/                envio manual pela tela de conversas
+    salao-webhook/            webhook da Meta (verificação, assinatura, gravação, bot)
+    salao-responder/          envio manual pela tela de conversas
     _shared/                  módulos comuns (assinatura, WhatsApp, LLM, regras do bot, banco)
   tests/                      testes Deno (sem rede, sem banco)
   config.toml                 verify_jwt por função
-web/index.html                tela de conversas (estática)
+web/index.html                tela de conversas e de serviços/preços (estática)
 docs/                         decisões, diagnóstico dos modelos, pendências, deploy
 ```
 
 ## Como roda
 
-1. A Meta chama `whatsapp-webhook`. O código confere `X-Hub-Signature-256`
+1. A Meta chama `salao-webhook`. O código confere `X-Hub-Signature-256`
    com o App Secret e grava mensagens e `statuses`.
 2. Para cada mensagem nova (dedupe por `wamid`), em segundo plano:
    espera alguns segundos para juntar mensagens seguidas; se o bot da
    conversa estiver pausado, não faz nada; se for áudio/imagem, pedido de
    atendente ou faltar dado do salão, passa para humano sem chamar a LLM;
-   senão chama o Claude, que devolve JSON com a resposta e se precisa de humano.
-3. Passar para humano = pausa o bot daquela conversa e marca
-   "precisa de você" na tela. Só volta quando alguém clica em "Retomar bot".
-4. A tela de conversas usa login do Supabase Auth; só quem está na tabela
-   `equipe` vê algo (RLS). Responder pela tela pausa o bot da conversa.
+   senão chama o Claude com os serviços ativos de `salao_servicos`, e ele
+   devolve JSON com a resposta e se precisa de humano. A primeira resposta
+   de cada conversa começa com a apresentação de assistente virtual.
+3. Passar para humano = pausa o bot daquela conversa, marca
+   "precisa de você" na tela e manda aviso por WhatsApp para
+   `SALAO_AVISO_PARA`. Só volta quando alguém clica em "Retomar bot".
+4. Se alguém responder pelo app do celular (coexistência), o bot daquela
+   conversa pausa sozinho (evento `smb_message_echoes`; formato não conferido).
+5. A tela usa login do Supabase Auth; só quem está em `salao_equipe` vê
+   algo (RLS). Responder pela tela pausa o bot da conversa. A aba Serviços
+   edita preços sem deploy.
+6. Conversas paradas há 12 meses são apagadas todo dia (pg_cron).
 
 ## Desenvolvimento
 
@@ -45,8 +54,13 @@ deno task test     # testes
 deno task check    # checagem de tipos das funções
 ```
 
-Os dados do salão ficam em `supabase/functions/_shared/salao.ts`. Enquanto
-faltar algum campo obrigatório, o bot não usa a LLM e passa tudo para humano.
+Dados fixos do salão (nome, endereço, horário, tom, textos) ficam em
+`supabase/functions/_shared/salao.ts`; serviços e preços, na tabela
+`salao_servicos`. Sem serviço ativo, o bot não usa a LLM e passa tudo para humano.
+
+Tela em teste local: copie `web/config.example.js` para `web/config.js`,
+rode `python3 -m http.server 8000` dentro de `web/` e abra
+`http://localhost:8000` (e use `SALAO_PAINEL_ORIGEM=http://localhost:8000`).
 
 ## Segredos
 

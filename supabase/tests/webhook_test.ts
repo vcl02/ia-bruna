@@ -1,8 +1,8 @@
 import { assertEquals } from "jsr:@std/assert@1.0.13";
-import { tratar } from "../functions/whatsapp-webhook/index.ts";
+import { tratar } from "../functions/salao-webhook/index.ts";
 
-Deno.env.set("WHATSAPP_VERIFY_TOKEN", "tok");
-Deno.env.set("META_APP_SECRET", "segredo");
+Deno.env.set("SALAO_WHATSAPP_VERIFY_TOKEN", "tok");
+Deno.env.set("SALAO_META_APP_SECRET", "segredo");
 
 Deno.test("GET devolve o hub.challenge com o token certo", async () => {
   const r = await tratar(new Request("http://x/?hub.mode=subscribe&hub.verify_token=tok&hub.challenge=123"));

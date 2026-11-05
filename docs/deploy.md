@@ -1,20 +1,30 @@
-# Deploy (cada passo exige confirmação antes de ser executado)
+# Deploy de teste (cada passo exige confirmação antes de ser executado)
 
-Alvo: projeto Supabase **próprio do salão** (não o do hub). Ainda não
-criado/indicado.
+Alvo durante os testes: projeto Supabase **hub** (`yzmyncxoskvqzdczaill`),
+isolado por prefixo. Número: o seu número já registrado na API.
 
 | # | Ação | Alvo | Efeito |
 |---|------|------|--------|
-| 1 | Aplicar `supabase/migrations/*` | banco do projeto do salão | cria tabelas, visão, gatilho e RLS |
-| 2 | `supabase secrets set ...` (nomes em `.env.example`) | Edge Functions do projeto | guarda token da Meta, app secret, chave da Anthropic |
-| 3 | Deploy de `whatsapp-webhook` e `responder` | Edge Functions | publica as URLs |
-| 4 | Configurar o webhook no app da Meta (URL da função + verify token) e assinar o campo `messages` | app na Meta | a Meta passa a mandar mensagens e statuses |
-| 5 | Criar usuário(s) no Supabase Auth e inserir em `equipe` | Auth + tabela `equipe` | libera a tela de conversas |
-| 6 | Publicar `web/` (com `config.js`) e definir `PAINEL_ORIGEM` | hospedagem estática a definir | tela de conversas no ar |
+| 1 | Aplicar `supabase/migrations/20261106000000_salao_inicial.sql` | banco do hub | cria tabelas/visão/funções `salao_*` com RLS e agenda a limpeza diária no pg_cron (`salao-limpar-antigos`). Não toca nas tabelas do hub |
+| 2 | Inserir o seu usuário em `salao_equipe` | tabela `salao_equipe` | libera a tela para você |
+| 3 | Cadastrar serviços e preços (pela tela, depois do passo 6) | tabela `salao_servicos` | o bot passa a responder com a LLM |
+| 4 | Secrets `SALAO_*` (lista em `.env.example`) | Edge Functions do hub (vale para o projeto todo) | guarda token da Meta, app secret, chave da Anthropic, números de aviso |
+| 5 | Deploy de `salao-webhook` e `salao-responder` | Edge Functions do hub | publica as URLs; as funções do hub não mudam |
+| 6 | Webhook no app da Meta: URL de `salao-webhook` + verify token; assinar `messages` (e `smb_message_echoes` quando for o número da Bruna) | app na Meta | a Meta passa a mandar mensagens e statuses |
+| 7 | Criar o modelo de aviso na Meta (categoria utilidade), ex.: "Uma conversa precisa de você: {{1}}. Motivo: {{2}}" | WABA na Meta | permite aviso fora da janela de 24 h (depende de aprovação da Meta) |
 
-Antes de ligar para clientes reais: preencher `salao.ts`, conferir a
-política da Meta para IA, testar com números da família.
+Teste: mensagens a partir do celular da sua esposa (ou outro número que
+NÃO esteja em `SALAO_AVISO_PARA`).
 
 Rollback: pausar o bot de todas as conversas
-(`update conversas set bot_pausado = true;`) ou remover a assinatura do
-webhook no app da Meta.
+(`update salao_conversas set bot_pausado = true;`), remover a URL do
+webhook no app da Meta, ou apagar as funções `salao-*`. Para remover tudo
+do hub: `cron.unschedule('salao-limpar-antigos')` e `drop` das tabelas,
+visão e funções `salao_*`.
+
+## Antes de clientes reais
+1. Projeto Supabase próprio do salão; repetir 1–6 lá.
+2. Conferir endereço (grafia e cidade) em `salao.ts`.
+3. Conferir a política atual da Meta para IA.
+4. Confirmar com a Bruna se ela usa os lembretes por WhatsApp do Minha Agenda.
+5. Migrar o número da Bruna (coexistência) e assinar `smb_message_echoes`.

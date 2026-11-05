@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.13";
 import { montarMensagens, montarSistema, validarDecisao } from "../functions/_shared/llm.ts";
-import { SALAO_TESTE } from "./salao_teste.ts";
+import { SERVICOS_TESTE } from "./salao_teste.ts";
+import { SALAO } from "../functions/_shared/salao.ts";
 
 Deno.test("histórico alterna papéis, começa e termina com a cliente", () => {
   const m = montarMensagens([
@@ -16,9 +17,10 @@ Deno.test("histórico alterna papéis, começa e termina com a cliente", () => {
 });
 
 Deno.test("prompt contém só os dados configurados", () => {
-  const s = montarSistema(SALAO_TESTE);
+  const s = montarSistema(SALAO, SERVICOS_TESTE);
   assertStringIncludes(s, "Escova: R$ 50");
-  assertStringIncludes(s, SALAO_TESTE.linkAgendamento!);
+  assertStringIncludes(s, SALAO.linkAgendamento!);
+  assertStringIncludes(s, "Bruna Frameschi Hair");
   assertStringIncludes(s, "Nunca invente");
 });
 

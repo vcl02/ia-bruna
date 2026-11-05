@@ -34,8 +34,38 @@ Registro curto. Data = quando foi decidido ou registrado aqui.
 ## 2026-11-05 — Dados e LGPD
 - Gravado: número, nome do perfil, texto das mensagens, statuses.
   Mídia não é baixada.
-- RLS ligado em todas as tabelas; leitura só para `equipe`; a tela só
+- RLS ligado em todas as tabelas; leitura só para `salao_equipe`; a tela só
   pode alterar as colunas de pausa.
 - Logs não levam texto de mensagem.
-- Em aberto: prazo de retenção e aviso de que é um assistente automático
-  (ver `pendencias.md`).
+- Retenção: 12 meses sem movimento -> conversa apagada (função
+  `salao_limpar_antigos`, agendada no pg_cron pela migration).
+- O bot se apresenta como assistente virtual na primeira resposta.
+
+## 2026-11-06 — Testes dentro do projeto Supabase do hub (temporário)
+- Motivo: a organização está no plano free com 2 projetos ativos (hub e
+  gestao-ammi). Pelo que sei, o free permite 2 projetos ativos (não conferido).
+- Isolamento: tabelas `salao_*`, funções `salao-*`, secrets `SALAO_*`,
+  chave da Anthropic própria do bot.
+- Riscos aceitos só para teste: secrets do projeto são visíveis para
+  todas as funções (as do hub enxergariam as do bot e vice-versa); o login
+  da tela usa o Auth do hub.
+- Por isso, durante os testes, **só o Victor** usa a tela (conta que já
+  existe no hub). Não criar conta da Bruna no hub: as políticas
+  `*_somente_dono` do hub deixariam uma conta nova gravar linhas próprias
+  nas tabelas pessoais (sem ler as do Victor — verificado nas políticas).
+- Antes de clientes reais: projeto próprio do salão (pausar um projeto,
+  ou plano pago). A migração é: aplicar a mesma migration lá, copiar
+  `salao_servicos`, trocar URL do webhook na Meta.
+
+## 2026-11-06 — Serviços e preços no banco
+- Tabela `salao_servicos`, editada pela aba Serviços da tela. Mudar preço
+  não exige deploy.
+
+## 2026-11-06 — Aviso à equipe por WhatsApp
+- Dentro da janela de 24 h do número da equipe: texto livre.
+- Fora: modelo aprovado (`SALAO_AVISO_MODELO`, 2 parâmetros: cliente e motivo).
+- Mensagens vindas dos números da equipe não são respondidas pelo bot.
+
+## 2026-11-06 — Coexistência
+- O número da Bruna vai para a API mantendo o app no celular.
+- Resposta dada pelo app pausa o bot da conversa (evento de eco).

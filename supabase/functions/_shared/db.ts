@@ -1,7 +1,8 @@
 // Acesso ao banco com a service role (só dentro das Edge Functions).
 
 import { createClient, type SupabaseClient } from "./deps.ts";
-import type { MensagemRecebida, ResultadoEnvio, StatusRecebido } from "./whatsapp.ts";
+import type { EcoEnviado, MensagemRecebida, ResultadoEnvio, StatusRecebido } from "./whatsapp.ts";
+import type { Servico } from "./salao.ts";
 import type { Conversa, Repositorio } from "./bot.ts";
 import type { ItemHistorico } from "./llm.ts";
 
@@ -28,7 +29,7 @@ export class RepositorioSupabase implements Repositorio {
   /** Grava a mensagem recebida. `nova` = false quando a Meta reenviou a mesma. */
   async registrarEntrada(m: MensagemRecebida): Promise<{ conversaId: string; nova: boolean }> {
     const conversa = checar(
-      await this.db.from("conversas").upsert(
+      await this.db.from("salao_conversas").upsert(
         {
           wa_id: m.waId,
           ...(m.nomePerfil ? { nome_perfil: m.nomePerfil } : {}),
@@ -40,7 +41,7 @@ export class RepositorioSupabase implements Repositorio {
     ) as { id: string };
 
     const inserida = checar(
-      await this.db.from("mensagens").upsert(
+      await this.db.from("salao_mensagens").upsert(
         {
           conversa_id: conversa.id,
           direcao: "entrada",
@@ -59,7 +60,7 @@ export class RepositorioSupabase implements Repositorio {
 
   async registrarStatus(s: StatusRecebido): Promise<void> {
     checar(
-      await this.db.from("status_mensagens").upsert(
+      await this.db.from("salao_status").upsert(
         {
           wamid: s.wamid,
           status: s.status,
@@ -76,14 +77,69 @@ export class RepositorioSupabase implements Repositorio {
 
   async conversa(id: string): Promise<Conversa> {
     const r = checar(
-      await this.db.from("conversas").select("id, wa_id, bot_pausado").eq("id", id).single(),
-    ) as { id: string; wa_id: string; bot_pausado: boolean };
-    return { id: r.id, waId: r.wa_id, botPausado: r.bot_pausado };
+      await this.db.from("salao_conversas").select("id, wa_id, nome_perfil, bot_pausado").eq("id", id).single(),
+    ) as { id: string; wa_id: string; nome_perfil: string | null; bot_pausado: boolean };
+    return { id: r.id, waId: r.wa_id, nomePerfil: r.nome_perfil, botPausado: r.bot_pausado };
+  }
+
+  async temSaida(conversaId: string): Promise<boolean> {
+    const r = checar(
+      await this.db.from("salao_mensagens").select("id")
+        .eq("conversa_id", conversaId).eq("direcao", "saida").limit(1),
+    ) as unknown[];
+    return r.length > 0;
+  }
+
+  async servicosAtivos(): Promise<Servico[]> {
+    return checar(
+      await this.db.from("salao_servicos").select("nome, preco, duracao, observacao")
+        .eq("ativo", true).order("ordem").order("nome"),
+    ) as Servico[];
+  }
+
+  async ultimoInboundDe(waId: string): Promise<Date | null> {
+    const r = checar(
+      await this.db.from("salao_conversas").select("ultimo_inbound_em").eq("wa_id", waId).maybeSingle(),
+    ) as { ultimo_inbound_em: string | null } | null;
+    return r?.ultimo_inbound_em ? new Date(r.ultimo_inbound_em) : null;
+  }
+
+  /**
+   * Mensagem enviada pelo app do celular (coexistência): registra como humana
+   * e pausa o bot, porque alguém assumiu a conversa.
+   */
+  async registrarEco(e: EcoEnviado): Promise<void> {
+    // Se o wamid já existe, a mensagem foi enviada por nós (bot ou tela): ignora.
+    const ja = checar(
+      await this.db.from("salao_mensagens").select("id").eq("wamid", e.wamid).limit(1),
+    ) as unknown[];
+    if (ja.length > 0) return;
+    const conversa = checar(
+      await this.db.from("salao_conversas").upsert(
+        { wa_id: e.para, bot_pausado: true, atualizado_em: new Date().toISOString() },
+        { onConflict: "wa_id" },
+      ).select("id").single(),
+    ) as { id: string };
+    checar(
+      await this.db.from("salao_mensagens").upsert(
+        {
+          conversa_id: conversa.id,
+          direcao: "saida",
+          autor: "humano",
+          wamid: e.wamid,
+          tipo: e.tipo,
+          texto: e.texto,
+          status: "enviada_pelo_app",
+          criado_em: e.enviadaEm.toISOString(),
+        },
+        { onConflict: "wamid", ignoreDuplicates: true },
+      ),
+    );
   }
 
   async ultimaEntradaWamid(conversaId: string): Promise<string | null> {
     const r = checar(
-      await this.db.from("mensagens").select("wamid")
+      await this.db.from("salao_mensagens").select("wamid")
         .eq("conversa_id", conversaId).eq("direcao", "entrada")
         .order("criado_em", { ascending: false }).limit(1),
     ) as { wamid: string | null }[];
@@ -92,7 +148,7 @@ export class RepositorioSupabase implements Repositorio {
 
   async historico(conversaId: string, limite: number): Promise<ItemHistorico[]> {
     const r = checar(
-      await this.db.from("mensagens").select("autor, texto, tipo")
+      await this.db.from("salao_mensagens").select("autor, texto, tipo")
         .eq("conversa_id", conversaId)
         .order("criado_em", { ascending: false }).limit(limite),
     ) as { autor: ItemHistorico["autor"]; texto: string | null; tipo: string }[];
@@ -101,7 +157,7 @@ export class RepositorioSupabase implements Repositorio {
 
   async registrarSaida(conversaId: string, autor: "bot" | "humano", texto: string, envio: ResultadoEnvio): Promise<void> {
     checar(
-      await this.db.from("mensagens").insert({
+      await this.db.from("salao_mensagens").insert({
         conversa_id: conversaId,
         direcao: "saida",
         autor,
@@ -112,12 +168,12 @@ export class RepositorioSupabase implements Repositorio {
         erro: envio.ok ? null : { http: envio.httpStatus, erro: envio.erro },
       }),
     );
-    checar(await this.db.from("conversas").update({ atualizado_em: new Date().toISOString() }).eq("id", conversaId));
+    checar(await this.db.from("salao_conversas").update({ atualizado_em: new Date().toISOString() }).eq("id", conversaId));
   }
 
   async marcarHumano(conversaId: string, motivo: string): Promise<void> {
     checar(
-      await this.db.from("conversas").update({
+      await this.db.from("salao_conversas").update({
         bot_pausado: true,
         precisa_humano: true,
         motivo_humano: motivo,

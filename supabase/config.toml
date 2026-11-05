@@ -1,9 +1,9 @@
-# Configuração mínima das Edge Functions deste projeto.
+# Configuração das Edge Functions deste projeto.
 # O webhook da Meta não manda JWT do Supabase: a autenticação dele é a
 # assinatura X-Hub-Signature-256, validada no código.
-[functions.whatsapp-webhook]
+[functions.salao-webhook]
 verify_jwt = false
 
-# O painel chama com o JWT do usuário logado; a função ainda confere a tabela equipe.
-[functions.responder]
+# A tela chama com o JWT do usuário logado; a função ainda confere salao_equipe.
+[functions.salao-responder]
 verify_jwt = true

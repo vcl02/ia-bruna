@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.13";
-import { dentroDaJanela, enviarTexto, lerEventos } from "../functions/_shared/whatsapp.ts";
+import { dentroDaJanela, enviarModelo, enviarTexto, lerEventos } from "../functions/_shared/whatsapp.ts";
 
 const PNID = "111";
 
@@ -72,4 +72,28 @@ Deno.test("envio: erro da API vira ok=false", async () => {
   const r = await enviarTexto({ token: "T", phoneNumberId: PNID, graphApiVersion: "vX" }, "55", "x", fakeFetch);
   assertEquals(r.ok, false);
   assertEquals(r.httpStatus, 400);
+});
+
+Deno.test("lê eco de mensagem enviada pelo app do celular", () => {
+  const ev = lerEventos(payload({
+    message_echoes: [{ id: "wamid.e", from: "55BIZ", to: "5511", timestamp: "1730000000", type: "text", text: { body: "oi, é a Bruna" } }],
+  }, PNID, "smb_message_echoes"), PNID);
+  assertEquals(ev.ecos.length, 1);
+  assertEquals(ev.ecos[0].para, "5511");
+  assertEquals(ev.ecos[0].texto, "oi, é a Bruna");
+  assertEquals(ev.ignorados, 0);
+});
+
+Deno.test("envio de modelo com parâmetros no corpo", async () => {
+  let body: Record<string, any> = {};
+  const fakeFetch = (async (_u: string, init: RequestInit) => {
+    body = JSON.parse(init.body as string);
+    return new Response(JSON.stringify({ messages: [{ id: "w" }] }), { status: 200 });
+  }) as typeof fetch;
+  const r = await enviarModelo({ token: "T", phoneNumberId: PNID, graphApiVersion: "vX" }, "55", "aviso", "pt_BR", ["a", "b"], fakeFetch);
+  assertEquals(r.ok, true);
+  assertEquals(body.type, "template");
+  assertEquals(body.template.name, "aviso");
+  assertEquals(body.template.language.code, "pt_BR");
+  assertEquals(body.template.components[0].parameters.map((p: { text: string }) => p.text), ["a", "b"]);
 });

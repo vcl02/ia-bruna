@@ -36,12 +36,18 @@
   table { border-collapse:collapse; width:100%; font-size:13px; }
   td, th { border:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
   .oculto { display:none !important; }
+  #servicos { padding:16px; overflow:auto; display:grid; gap:8px; align-content:start; }
+  .srv { display:grid; grid-template-columns:2fr 1fr 1fr 2fr 60px auto auto; gap:6px; align-items:center; }
+  .srv label { display:flex; gap:4px; align-items:center; font-size:13px; }
+  .srv input[type=checkbox] { width:auto; }
+  @media (max-width:700px) { .srv { grid-template-columns:1fr 1fr; } }
   @media (max-width:700px) { #app { grid-template-columns:1fr; } #lista { max-height:35vh; border-right:0; border-bottom:1px solid var(--line); } .msg { max-width:90%; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Conversas do salão</h1>
+  <button id="btnServicos" class="oculto">Serviços</button>
   <button id="btnFalhas" class="oculto">Falhas de envio</button>
   <button id="btnSair" class="oculto">Sair</button>
 </header>
@@ -63,6 +69,7 @@
       <button>Enviar</button>
     </form>
     <div id="falhas" class="oculto"></div>
+    <div id="servicos" class="oculto"></div>
   </section>
 </div>
 
@@ -82,7 +89,7 @@ function el(tag, attrs = {}, ...filhos) {
 const hora = (s) => s ? new Date(s).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "";
 
 async function carregarLista() {
-  const { data, error } = await sb.from("conversas")
+  const { data, error } = await sb.from("salao_conversas")
     .select("id, wa_id, nome_perfil, bot_pausado, precisa_humano, motivo_humano, atualizado_em")
     .order("precisa_humano", { ascending: false }).order("atualizado_em", { ascending: false }).limit(200);
   if (error) return alert(error.message);
@@ -103,7 +110,7 @@ function desenharTopo() {
   const pausa = el("button", {}, c.bot_pausado ? "Retomar bot" : "Pausar bot");
   pausa.onclick = async () => {
     const mudanca = c.bot_pausado ? { bot_pausado: false, precisa_humano: false, motivo_humano: null } : { bot_pausado: true };
-    const { error } = await sb.from("conversas").update(mudanca).eq("id", c.id);
+    const { error } = await sb.from("salao_conversas").update(mudanca).eq("id", c.id);
     if (error) return alert(error.message);
     await carregarLista();
   };
@@ -115,7 +122,7 @@ function desenharTopo() {
 
 async function abrir(c) {
   atual = c;
-  $("falhas").classList.add("oculto"); $("msgs").classList.remove("oculto"); $("envio").classList.remove("oculto");
+  $("falhas").classList.add("oculto"); $("servicos").classList.add("oculto"); $("msgs").classList.remove("oculto"); $("envio").classList.remove("oculto");
   desenharTopo();
   await carregarMsgs();
   await carregarLista();
@@ -123,7 +130,7 @@ async function abrir(c) {
 
 async function carregarMsgs() {
   if (!atual) return;
-  const { data, error } = await sb.from("mensagens").select("autor, tipo, texto, status, erro, criado_em")
+  const { data, error } = await sb.from("salao_mensagens").select("autor, tipo, texto, status, erro, criado_em")
     .eq("conversa_id", atual.id).order("criado_em").limit(500);
   if (error) return alert(error.message);
   const caixa = $("msgs");
@@ -139,7 +146,7 @@ $("envio").onsubmit = async (e) => {
   e.preventDefault();
   const texto = $("texto").value.trim();
   if (!texto || !atual) return;
-  const { data, error } = await sb.functions.invoke("responder", { body: { conversa_id: atual.id, texto } });
+  const { data, error } = await sb.functions.invoke("salao-responder", { body: { conversa_id: atual.id, texto } });
   if (error) {
     let msg = error.message;
     try { msg = (await error.context.json()).erro || msg; } catch {}
@@ -151,15 +158,54 @@ $("envio").onsubmit = async (e) => {
 
 $("btnFalhas").onclick = async () => {
   atual = null;
-  $("msgs").classList.add("oculto"); $("envio").classList.add("oculto"); $("falhas").classList.remove("oculto");
+  $("msgs").classList.add("oculto"); $("envio").classList.add("oculto"); $("servicos").classList.add("oculto"); $("falhas").classList.remove("oculto");
   $("topo").replaceChildren(el("strong", {}, "Falhas de envio (statuses com erro)"));
-  const { data, error } = await sb.from("falhas_de_envio").select("*").limit(200);
+  const { data, error } = await sb.from("salao_falhas_de_envio").select("*").limit(200);
   if (error) return alert(error.message);
   const cols = ["recebido_em", "tipo_mensagem", "codigo", "titulo", "mensagem", "detalhes", "recipient_id"];
   $("falhas").replaceChildren(data.length === 0 ? "Nenhuma falha registrada." :
     el("table", {}, el("tr", {}, ...cols.map((c) => el("th", {}, c))),
       ...data.map((r) => el("tr", {}, ...cols.map((c) => el("td", {}, c === "recebido_em" ? hora(r[c]) : String(r[c] ?? "")))))));
 };
+
+
+// Serviços e preços: o bot só fala do que estiver ativo aqui.
+function linhaServico(sv) {
+  const campo = (nome, ph, v) => el("input", { placeholder: ph, value: v ?? "", "data-campo": nome });
+  const ativo = el("input", { type: "checkbox", "data-campo": "ativo" }); ativo.checked = sv.ativo ?? true;
+  const ordem = el("input", { type: "number", value: String(sv.ordem ?? 0), "data-campo": "ordem", title: "ordem" });
+  const salvar = el("button", {}, sv.id ? "Salvar" : "Adicionar");
+  const linha = el("div", { class: "srv" },
+    campo("nome", "Serviço", sv.nome), campo("preco", "Preço (R$)", sv.preco),
+    campo("duracao", "Duração", sv.duracao), campo("observacao", "Observação", sv.observacao),
+    ordem, el("label", {}, ativo, "ativo"), salvar);
+  salvar.onclick = async () => {
+    const v = {};
+    for (const i of linha.querySelectorAll("[data-campo]")) {
+      const c = i.dataset.campo;
+      v[c] = c === "ativo" ? i.checked : c === "ordem" ? Number(i.value) || 0 : (i.value.trim() || null);
+    }
+    if (!v.nome || !v.preco) return alert("Serviço e preço são obrigatórios.");
+    v.atualizado_em = new Date().toISOString();
+    const { error } = sv.id
+      ? await sb.from("salao_servicos").update(v).eq("id", sv.id)
+      : await sb.from("salao_servicos").insert(v);
+    if (error) return alert(error.message);
+    await abrirServicos();
+  };
+  return linha;
+}
+
+async function abrirServicos() {
+  atual = null;
+  for (const id of ["msgs", "envio", "falhas"]) $(id).classList.add("oculto");
+  $("servicos").classList.remove("oculto");
+  $("topo").replaceChildren(el("strong", {}, "Serviços e preços (o bot só usa os ativos)"));
+  const { data, error } = await sb.from("salao_servicos").select("*").order("ordem").order("nome");
+  if (error) return alert(error.message);
+  $("servicos").replaceChildren(...data.map(linhaServico), el("h3", {}, "Novo serviço"), linhaServico({}));
+}
+$("btnServicos").onclick = abrirServicos;
 
 $("login").onsubmit = async (e) => {
   e.preventDefault();
@@ -175,6 +221,7 @@ sb.auth.onAuthStateChange((_ev, sessao) => {
   $("app").classList.toggle("oculto", !logado);
   $("btnSair").classList.toggle("oculto", !logado);
   $("btnFalhas").classList.toggle("oculto", !logado);
+  $("btnServicos").classList.toggle("oculto", !logado);
   clearInterval(timer);
   if (logado) { carregarLista(); timer = setInterval(() => { carregarLista(); carregarMsgs(); }, 15000); }
 });

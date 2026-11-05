@@ -21,9 +21,19 @@ export interface StatusRecebido {
   pricing: unknown | null;
 }
 
+/** Mensagem enviada pelo app WhatsApp Business do celular (coexistência). */
+export interface EcoEnviado {
+  wamid: string;
+  para: string;
+  tipo: string;
+  texto: string | null;
+  enviadaEm: Date;
+}
+
 export interface EventosWebhook {
   mensagens: MensagemRecebida[];
   statuses: StatusRecebido[];
+  ecos: EcoEnviado[];
   ignorados: number; // eventos de outro número ou de campo desconhecido
 }
 
@@ -53,13 +63,35 @@ function textoDaMensagem(m: Obj): string | null {
 }
 
 export function lerEventos(payload: unknown, phoneNumberId: string): EventosWebhook {
-  const out: EventosWebhook = { mensagens: [], statuses: [], ignorados: 0 };
+  const out: EventosWebhook = { mensagens: [], statuses: [], ecos: [], ignorados: 0 };
   for (const entry of arr(obj(payload).entry)) {
     for (const change of arr(obj(entry).changes)) {
       const c = obj(change);
       const value = obj(c.value);
       const destino = str(obj(value.metadata).phone_number_id);
-      if (c.field !== "messages" || destino !== phoneNumberId) {
+      if (destino !== phoneNumberId) {
+        out.ignorados++;
+        continue;
+      }
+      // Coexistência: o formato abaixo segue a documentação da Meta como a
+      // conheço, mas NÃO foi conferido com um evento real.
+      if (c.field === "smb_message_echoes") {
+        for (const eco of arr(value.message_echoes)) {
+          const e = obj(eco);
+          const wamid = str(e.id);
+          const para = str(e.to);
+          if (!wamid || !para) continue;
+          out.ecos.push({
+            wamid,
+            para,
+            tipo: str(e.type) ?? "desconhecido",
+            texto: textoDaMensagem(e),
+            enviadaEm: dataUnix(e.timestamp) ?? new Date(),
+          });
+        }
+        continue;
+      }
+      if (c.field !== "messages") {
         out.ignorados++;
         continue;
       }
@@ -117,11 +149,10 @@ export interface ResultadoEnvio {
   erro: unknown | null;
 }
 
-export async function enviarTexto(
+async function postar(
   cfg: ConfigWhatsApp,
-  para: string,
-  texto: string,
-  fetchFn: typeof fetch = fetch,
+  corpoMsg: Record<string, unknown>,
+  fetchFn: typeof fetch,
 ): Promise<ResultadoEnvio> {
   const url = `https://graph.facebook.com/${cfg.graphApiVersion}/${cfg.phoneNumberId}/messages`;
   const resp = await fetchFn(url, {
@@ -130,18 +161,43 @@ export async function enviarTexto(
       Authorization: `Bearer ${cfg.token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: para,
-      type: "text",
-      text: { preview_url: false, body: texto },
-    }),
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", ...corpoMsg }),
   });
   const corpo = obj(await resp.json().catch(() => ({})));
   const wamid = str(obj(arr(corpo.messages)[0]).id);
   // Atenção: 200 aqui só significa "aceito". A entrega real vem nos statuses.
   return { ok: resp.ok && !!wamid, wamid, httpStatus: resp.status, erro: corpo.error ?? null };
+}
+
+export function enviarTexto(
+  cfg: ConfigWhatsApp,
+  para: string,
+  texto: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<ResultadoEnvio> {
+  return postar(cfg, { to: para, type: "text", text: { preview_url: false, body: texto } }, fetchFn);
+}
+
+/** Modelo (template) aprovado na Meta, com parâmetros só no corpo. */
+export function enviarModelo(
+  cfg: ConfigWhatsApp,
+  para: string,
+  nome: string,
+  idioma: string,
+  parametros: string[],
+  fetchFn: typeof fetch = fetch,
+): Promise<ResultadoEnvio> {
+  return postar(cfg, {
+    to: para,
+    type: "template",
+    template: {
+      name: nome,
+      language: { code: idioma },
+      components: parametros.length
+        ? [{ type: "body", parameters: parametros.map((t) => ({ type: "text", text: t })) }]
+        : [],
+    },
+  }, fetchFn);
 }
 
 export const JANELA_24H_MS = 24 * 60 * 60 * 1000;

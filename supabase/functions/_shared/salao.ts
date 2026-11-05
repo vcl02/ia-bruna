@@ -1,44 +1,44 @@
-// Dados do salão usados pelo bot. Nada aqui é segredo.
-// Campos `null` são informações que AINDA NÃO FORAM PASSADAS. Enquanto houver
-// campo obrigatório faltando, o bot não chama a LLM: passa direto para humano.
+// Dados fixos do salão usados pelo bot. Nada aqui é segredo.
+// Serviços e preços ficam no banco (tabela salao_servicos), editáveis pela tela.
+// Enquanto faltar campo obrigatório ou não houver serviço ativo, o bot não
+// chama a LLM: passa direto para humano.
 
 export interface Servico {
   nome: string;
-  preco: string;        // texto livre, ex.: "R$ 80" ou "a partir de R$ 120"
-  duracao?: string;     // opcional, ex.: "1h"
-  observacao?: string;  // opcional, ex.: "preço varia com o comprimento"
+  preco: string;
+  duracao?: string | null;
+  observacao?: string | null;
 }
 
 export interface DadosSalao {
   nomeSalao: string | null;
-  nomeAtendente: string | null;     // como o bot se apresenta / quem assume
+  nomeAtendente: string | null;
   linkAgendamento: string | null;
   endereco: string | null;
   horarioFuncionamento: string | null;
   formasPagamento: string | null;   // opcional
-  servicos: Servico[];
   tom: string | null;
+  mensagemApresentacao: string;     // vai antes da primeira resposta de cada conversa
   mensagemPassagemHumano: string;
-  mensagemForaDoEscopo: string;
 }
 
+// Informado pelo usuário em 2026-11-05/06.
 export const SALAO: DadosSalao = {
-  nomeSalao: null,
-  nomeAtendente: null,
-  // Informado pelo usuário em 2026-11-05.
+  nomeSalao: "Bruna Frameschi Hair",
+  nomeAtendente: "Bruna",
   linkAgendamento: "https://online.maapp.com.br/Brunaframeschihair",
-  endereco: null,
-  horarioFuncionamento: null,
+  // TODO confirmar grafia e cidade antes de ir para clientes reais.
+  endereco: "Rua Sttore Andrezza, 691 - Jardim Triste",
+  horarioFuncionamento: "terça a sábado, das 10h às 18h",
   formasPagamento: null,
-  servicos: [],
-  tom: null,
+  tom: "super amoroso e acolhedor: carinhoso, próximo, pode usar emojis com moderação (💖✨), sem exagero e sem ser formal",
+  mensagemApresentacao:
+    "Oii! Aqui é a assistente virtual da Bruna Frameschi Hair 💖 Sou um atendimento automático e, se precisar, chamo a Bruna pra você.",
   mensagemPassagemHumano:
-    "Vou chamar alguém do salão pra te responder, tá? Assim que possível já te retornam por aqui. 😊",
-  mensagemForaDoEscopo:
-    "Por aqui eu só consigo ajudar com assuntos do salão (serviços, preços, horários e agendamento).",
+    "Vou chamar a Bruna pra te responder, tá bom? Assim que ela puder, ela te retorna por aqui 💖",
 };
 
-export function camposFaltando(d: DadosSalao): string[] {
+export function camposFaltando(d: DadosSalao, servicos: Servico[]): string[] {
   const faltando: string[] = [];
   if (!d.nomeSalao) faltando.push("nomeSalao");
   if (!d.nomeAtendente) faltando.push("nomeAtendente");
@@ -46,6 +46,6 @@ export function camposFaltando(d: DadosSalao): string[] {
   if (!d.endereco) faltando.push("endereco");
   if (!d.horarioFuncionamento) faltando.push("horarioFuncionamento");
   if (!d.tom) faltando.push("tom");
-  if (d.servicos.length === 0) faltando.push("servicos");
+  if (servicos.length === 0) faltando.push("servicos (tabela salao_servicos vazia)");
   return faltando;
 }
