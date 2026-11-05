@@ -27,8 +27,8 @@ export const SALAO: DadosSalao = {
   nomeSalao: "Bruna Frameschi Hair",
   nomeAtendente: "Bruna",
   linkAgendamento: "https://online.maapp.com.br/Brunaframeschihair",
-  // TODO confirmar grafia e cidade antes de ir para clientes reais.
-  endereco: "Rua Sttore Andrezza, 691 - Jardim Triste",
+  // Confirmado pelo usuário em 2026-11-06. Cidade não informada.
+  endereco: "Rua Ettore Andreazza, 691 - Jardim Tietê",
   horarioFuncionamento: "terça a sábado, das 10h às 18h",
   formasPagamento: null,
   tom: "super amoroso e acolhedor: carinhoso, próximo, pode usar emojis com moderação (💖✨), sem exagero e sem ser formal",

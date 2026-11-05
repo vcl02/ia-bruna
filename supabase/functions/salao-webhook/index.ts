@@ -4,10 +4,10 @@
 //         responde 200 e processa a resposta do bot em segundo plano.
 
 import { assinaturaValida } from "../_shared/assinatura.ts";
-import { enviarModelo, enviarTexto, lerEventos, type ConfigWhatsApp } from "../_shared/whatsapp.ts";
+import { enviarTexto, lerEventos, type ConfigWhatsApp } from "../_shared/whatsapp.ts";
 import { clienteServico, exigirEnv, RepositorioSupabase } from "../_shared/db.ts";
 import { processarMensagem, type DepsBot } from "../_shared/bot.ts";
-import { avisarEquipe, lerConfigAviso } from "../_shared/aviso.ts";
+import { avisarEquipe, enviarEmailResend, lerConfigAviso } from "../_shared/aviso.ts";
 import { AtendenteClaude } from "../_shared/llm.ts";
 import { SALAO } from "../_shared/salao.ts";
 
@@ -70,13 +70,7 @@ export async function tratar(req: Request): Promise<Response> {
     atendente: new AtendenteClaude(SALAO, exigirEnv("SALAO_ANTHROPIC_API_KEY")),
     salao: SALAO,
     enviar: (para, texto) => enviarTexto(wa, para, texto),
-    avisar: (c, motivo) =>
-      avisarEquipe(aviso, {
-        ultimoInboundDe: (n) => repo.ultimoInboundDe(n),
-        enviarTexto: (p, t) => enviarTexto(wa, p, t),
-        enviarModelo: (p, n, i, params) => enviarModelo(wa, p, n, i, params),
-        log,
-      }, c, motivo),
+    avisar: (c, motivo) => avisarEquipe(aviso, { enviarEmail: (cfg, e) => enviarEmailResend(cfg, e), log }, c, motivo),
     esperar: (ms) => new Promise((r) => setTimeout(r, ms)),
     log,
   };
@@ -84,8 +78,6 @@ export async function tratar(req: Request): Promise<Response> {
   for (const m of eventos.mensagens) {
     const { conversaId, nova } = await repo.registrarEntrada(m);
     if (!nova) continue; // reenvio da Meta: já tratado
-    // Números da equipe: só grava (abre a janela de 24 h para os avisos); o bot não responde.
-    if (aviso.para.includes(m.waId)) continue;
     emSegundoPlano(
       processarMensagem(deps, conversaId, m).then((r) => log("processado", { conversa: conversaId, resultado: r })),
     );

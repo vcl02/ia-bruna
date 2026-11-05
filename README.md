@@ -36,8 +36,8 @@ docs/                         decisões, diagnóstico dos modelos, pendências, 
    devolve JSON com a resposta e se precisa de humano. A primeira resposta
    de cada conversa começa com a apresentação de assistente virtual.
 3. Passar para humano = pausa o bot daquela conversa, marca
-   "precisa de você" na tela e manda aviso por WhatsApp para
-   `SALAO_AVISO_PARA`. Só volta quando alguém clica em "Retomar bot".
+   "precisa de você" na tela e manda aviso por e-mail (Resend) para
+   `SALAO_AVISO_EMAIL_PARA`. Só volta quando alguém clica em "Retomar bot".
 4. Se alguém responder pelo app do celular (coexistência), o bot daquela
    conversa pausa sozinho (evento `smb_message_echoes`; formato não conferido).
 5. A tela usa login do Supabase Auth; só quem está em `salao_equipe` vê

@@ -1,51 +1,51 @@
-import { assertEquals } from "jsr:@std/assert@1.0.13";
-import { avisarEquipe, lerConfigAviso, limparParametro } from "../functions/_shared/aviso.ts";
-import type { ResultadoEnvio } from "../functions/_shared/whatsapp.ts";
+import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.13";
+import { avisarEquipe, enviarEmailResend, lerConfigAviso, type ConfigAviso, type Email } from "../functions/_shared/aviso.ts";
 
-const ok: ResultadoEnvio = { ok: true, wamid: "w", httpStatus: 200, erro: null };
-const conversa = { id: "c1", waId: "5511", nomePerfil: "Ana", botPausado: true };
+const conversa = { id: "c1", waId: "5511999990000", nomePerfil: "Ana", botPausado: true };
+const cfg: ConfigAviso = { para: ["a@x.com"], de: "bot@x.com", apiKey: "k" };
 
-function deps(ultimo: Date | null) {
-  const enviados: string[] = [];
+function deps() {
+  const enviados: Email[] = [];
+  const logs: Record<string, unknown>[] = [];
   return {
-    enviados,
+    enviados, logs,
     d: {
-      ultimoInboundDe: () => Promise.resolve(ultimo),
-      enviarTexto: (p: string) => { enviados.push(`texto:${p}`); return Promise.resolve(ok); },
-      enviarModelo: (p: string, n: string, _i: string, params: string[]) => { enviados.push(`modelo:${p}:${n}:${params.join("|")}`); return Promise.resolve(ok); },
-      log: () => {},
+      enviarEmail: (_c: ConfigAviso, e: Email) => { enviados.push(e); return Promise.resolve({ ok: true, status: 200 }); },
+      log: (_e: string, dados?: Record<string, unknown>) => { logs.push(dados ?? {}); },
     },
   };
 }
 
-Deno.test("config: lista de números só com dígitos", () => {
-  const env: Record<string, string> = { SALAO_AVISO_PARA: "+55 11 9999-0000, 5521888" };
+Deno.test("config: lista de e-mails", () => {
+  const env: Record<string, string> = { SALAO_AVISO_EMAIL_PARA: "a@x.com, b@y.com,lixo", SALAO_AVISO_EMAIL_DE: "bot@x.com", SALAO_RESEND_API_KEY: "k" };
   const c = lerConfigAviso((n) => env[n]);
-  assertEquals(c.para, ["551199990000", "5521888"]);
-  assertEquals(c.modelo, null);
-  assertEquals(c.idiomaModelo, "pt_BR");
+  assertEquals(c.para, ["a@x.com", "b@y.com"]);
+  assertEquals(c.de, "bot@x.com");
 });
 
-Deno.test("dentro da janela: manda texto", async () => {
-  const t = deps(new Date());
-  await avisarEquipe({ para: ["55A"], modelo: "aviso", idiomaModelo: "pt_BR" }, t.d, conversa, "pediu humano");
-  assertEquals(t.enviados, ["texto:55A"]);
+Deno.test("manda e-mail com cliente e motivo, sem texto da conversa", async () => {
+  const t = deps();
+  await avisarEquipe(cfg, t.d, conversa, "cliente pediu atendimento humano");
+  assertEquals(t.enviados.length, 1);
+  assertEquals(t.enviados[0].para, ["a@x.com"]);
+  assertStringIncludes(t.enviados[0].texto, "Ana (+5511999990000)");
+  assertStringIncludes(t.enviados[0].texto, "cliente pediu atendimento humano");
 });
 
-Deno.test("fora da janela: manda modelo", async () => {
-  const t = deps(null);
-  await avisarEquipe({ para: ["55A"], modelo: "aviso", idiomaModelo: "pt_BR" }, t.d, conversa, "pediu\nhumano");
-  assertEquals(t.enviados, ["modelo:55A:aviso:Ana (5511)|pediu humano"]);
+Deno.test("sem configuração: não envia, só registra", async () => {
+  const t = deps();
+  await avisarEquipe({ para: [], de: null, apiKey: null }, t.d, conversa, "x");
+  assertEquals(t.enviados.length, 0);
+  assertEquals(t.logs[0].via, "nenhum");
 });
 
-Deno.test("fora da janela e sem modelo: não envia", async () => {
-  const t = deps(null);
-  await avisarEquipe({ para: ["55A"], modelo: null, idiomaModelo: "pt_BR" }, t.d, conversa, "x");
-  assertEquals(t.enviados, []);
-});
-
-Deno.test("parâmetro limpo e curto", () => {
-  assertEquals(limparParametro("  a\n\tb  "), "a b");
-  assertEquals(limparParametro(""), "-");
-  assertEquals(limparParametro("x".repeat(300)).length, 200);
+Deno.test("Resend: monta a requisição", async () => {
+  let pedido: Request | undefined;
+  const fakeFetch = (async (u: string, init: RequestInit) => { pedido = new Request(u, init); return new Response("{}", { status: 200 }); }) as typeof fetch;
+  const r = await enviarEmailResend(cfg, { de: "bot@x.com", para: ["a@x.com"], assunto: "s", texto: "t" }, fakeFetch);
+  assertEquals(r.ok, true);
+  assertEquals(pedido!.url, "https://api.resend.com/emails");
+  assertEquals(pedido!.headers.get("authorization"), "Bearer k");
+  const b = await pedido!.json();
+  assertEquals([b.from, b.to, b.subject, b.text], ["bot@x.com", ["a@x.com"], "s", "t"]);
 });

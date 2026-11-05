@@ -60,12 +60,15 @@ Registro curto. Data = quando foi decidido ou registrado aqui.
 ## 2026-11-06 — Serviços e preços no banco
 - Tabela `salao_servicos`, editada pela aba Serviços da tela. Mudar preço
   não exige deploy.
+- Depois: importar do site do Minha Agenda por script (adiado).
 
-## 2026-11-06 — Aviso à equipe por WhatsApp
-- Dentro da janela de 24 h do número da equipe: texto livre.
-- Fora: modelo aprovado (`SALAO_AVISO_MODELO`, 2 parâmetros: cliente e motivo).
-- Mensagens vindas dos números da equipe não são respondidas pelo bot.
+## 2026-11-06 — Aviso à equipe por e-mail
+- Troca do aviso por WhatsApp (exigiria modelo aprovado fora da janela de 24 h).
+- Provedor: Resend (sugestão minha; trocar = mudar só `enviarEmailResend`).
+- O e-mail leva nome do perfil, número e motivo; não leva texto da conversa.
+- Sem chave configurada, o aviso só vai para o log; o resto funciona.
 
 ## 2026-11-06 — Coexistência
+- O número do Victor, registrado na API, continua 100% no app (relato).
 - O número da Bruna vai para a API mantendo o app no celular.
 - Resposta dada pelo app pausa o bot da conversa (evento de eco).

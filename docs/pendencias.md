@@ -1,8 +1,8 @@
 # Pendências, fatos e suposições
 
 ## Verificado (2026-11-06)
-- Testes Deno: 34 passando (assinatura, parser incl. eco do app, envio de
-  texto e modelo com `fetch` falso, aviso à equipe, regras do bot, prompt,
+- Testes Deno: 33 passando (assinatura, parser incl. eco do app, envio de
+  texto e modelo com `fetch` falso, aviso por e-mail, regras do bot, prompt,
   verificação GET e recusa de assinatura inválida).
 - Migration aplicada num Postgres 16 local com stubs do `auth`: equipe lê,
   pausa e edita serviços; fora da equipe vê 0 linhas e não grava;
@@ -20,17 +20,12 @@
   comportamento de reenvio da Meta.
 - Limite de 2 projetos ativos no plano free.
 - Política atual da Meta para IA.
-- Endereço: "Rua Sttore Andrezza, 691 - Jardim Triste" foi usado como
-  recebido; grafia e cidade a confirmar.
 - Não consegui abrir o link de agendamento (rede deste ambiente bloqueia).
 
 ## Perguntas em aberto
-1. Endereço: grafia correta da rua e do bairro, e a cidade.
-2. Preços: cadastrar pela aba Serviços, ou me mandar a lista?
-3. Quem recebe o aviso? No teste, o número precisa ser diferente do
-   número do bot (o seu). Na produção, a Bruna já verá tudo no app.
-4. Seu número (já na API) continua funcionando no app do celular?
-5. Formas de pagamento (opcional).
+1. Cidade do endereço (não vai na mensagem por enquanto).
+2. E-mail(s) que recebem o aviso e se vamos usar o Resend.
+3. Formas de pagamento (opcional).
 
 ## Limitações conhecidas
 - Fora da janela de 24 h só modelo aprovado é entregue; a tela recusa

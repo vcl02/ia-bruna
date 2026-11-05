@@ -1,51 +1,68 @@
-// Aviso à equipe por WhatsApp quando uma conversa precisa de alguém.
-//
-// Regra da Meta: texto livre só é entregue se o destinatário mandou mensagem
-// para o número do salão nas últimas 24 h. Fora disso, só modelo aprovado.
-// Por isso: dentro da janela -> texto; fora -> modelo (se configurado).
+// Aviso à equipe por e-mail quando uma conversa precisa de alguém.
+// Provedor: Resend (API HTTP simples). Trocar de provedor = trocar só
+// `enviarEmailResend`. Sem configuração, o aviso é só registrado no log.
+// O e-mail leva nome do perfil, número e motivo; nunca o texto da conversa.
 
-import { dentroDaJanela, type ResultadoEnvio } from "./whatsapp.ts";
 import type { Conversa } from "./bot.ts";
 
 export interface ConfigAviso {
-  para: string[];                 // números da equipe (formato da Meta, só dígitos)
-  modelo: string | null;          // nome do modelo aprovado na Meta
-  idiomaModelo: string;           // ex.: pt_BR
+  para: string[];          // e-mails da equipe
+  de: string | null;       // remetente aceito pelo provedor
+  apiKey: string | null;
+}
+
+export interface Email {
+  de: string;
+  para: string[];
+  assunto: string;
+  texto: string;
 }
 
 export interface DepsAviso {
-  ultimoInboundDe(waId: string): Promise<Date | null>;
-  enviarTexto(para: string, texto: string): Promise<ResultadoEnvio>;
-  enviarModelo(para: string, nome: string, idioma: string, params: string[]): Promise<ResultadoEnvio>;
+  enviarEmail(cfg: ConfigAviso, email: Email): Promise<{ ok: boolean; status: number }>;
   log(evento: string, dados?: Record<string, unknown>): void;
-}
-
-/** Parâmetro de modelo: sem quebras de linha e curto. */
-export function limparParametro(t: string, max = 200): string {
-  const s = t.replace(/\s+/g, " ").trim();
-  return s.length > max ? s.slice(0, max - 1) + "…" : s || "-";
 }
 
 export function lerConfigAviso(env: (n: string) => string | undefined): ConfigAviso {
   return {
-    para: (env("SALAO_AVISO_PARA") ?? "").split(",").map((s) => s.replace(/\D/g, "")).filter(Boolean),
-    modelo: env("SALAO_AVISO_MODELO") || null,
-    idiomaModelo: env("SALAO_AVISO_MODELO_IDIOMA") || "pt_BR",
+    para: (env("SALAO_AVISO_EMAIL_PARA") ?? "").split(",").map((s) => s.trim()).filter((s) => s.includes("@")),
+    de: env("SALAO_AVISO_EMAIL_DE") || null,
+    apiKey: env("SALAO_RESEND_API_KEY") || null,
+  };
+}
+
+export function montarEmail(cfg: ConfigAviso, c: Conversa, motivo: string): Email {
+  const cliente = c.nomePerfil ? `${c.nomePerfil} (+${c.waId})` : `+${c.waId}`;
+  return {
+    de: cfg.de!,
+    para: cfg.para,
+    assunto: `Bruna Frameschi Hair: conversa precisa de você (${c.nomePerfil ?? c.waId})`,
+    texto:
+      `Uma conversa no WhatsApp do salão precisa de atendimento humano.\n\n` +
+      `Cliente: ${cliente}\nMotivo: ${motivo}\n\n` +
+      `O bot desta conversa está pausado. Responda pela tela de conversas ou pelo app do WhatsApp Business.`,
   };
 }
 
 export async function avisarEquipe(cfg: ConfigAviso, deps: DepsAviso, c: Conversa, motivo: string): Promise<void> {
-  const cliente = c.nomePerfil ? `${c.nomePerfil} (${c.waId})` : c.waId;
-  for (const para of cfg.para) {
-    let envio: ResultadoEnvio | null = null;
-    let via = "nenhum";
-    if (dentroDaJanela(await deps.ultimoInboundDe(para))) {
-      via = "texto";
-      envio = await deps.enviarTexto(para, `💬 Conversa precisa de você: ${cliente}\nMotivo: ${motivo}`);
-    } else if (cfg.modelo) {
-      via = "modelo";
-      envio = await deps.enviarModelo(para, cfg.modelo, cfg.idiomaModelo, [limparParametro(cliente), limparParametro(motivo)]);
-    }
-    deps.log("aviso_equipe", { conversa: c.id, via, ok: envio?.ok ?? false, http: envio?.httpStatus ?? null });
+  if (!cfg.apiKey || !cfg.de || cfg.para.length === 0) {
+    deps.log("aviso_equipe", { conversa: c.id, via: "nenhum", motivo: "e-mail não configurado" });
+    return;
   }
+  const r = await deps.enviarEmail(cfg, montarEmail(cfg, c, motivo));
+  deps.log("aviso_equipe", { conversa: c.id, via: "email", ok: r.ok, http: r.status });
+}
+
+export async function enviarEmailResend(
+  cfg: ConfigAviso,
+  email: Email,
+  fetchFn: typeof fetch = fetch,
+): Promise<{ ok: boolean; status: number }> {
+  const resp = await fetchFn("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: email.de, to: email.para, subject: email.assunto, text: email.texto }),
+  });
+  await resp.body?.cancel();
+  return { ok: resp.ok, status: resp.status };
 }
