@@ -212,6 +212,23 @@ export function botPodeResponder(permitidos: Set<string>, waId: string): boolean
   return permitidos.size === 0 || permitidos.has(waId);
 }
 
+/**
+ * Remove tudo que envolve números fora da lista (mensagens, ecos e statuses).
+ * Lista vazia = mantém tudo.
+ */
+export function filtrarPorPermitidos(ev: EventosWebhook, permitidos: Set<string>): { eventos: EventosWebhook; descartados: number } {
+  const ok = (n: string | null) => botPodeResponder(permitidos, n ?? "");
+  const eventos: EventosWebhook = {
+    mensagens: ev.mensagens.filter((m) => ok(m.waId)),
+    statuses: ev.statuses.filter((s) => ok(s.recipientId)),
+    ecos: ev.ecos.filter((e) => ok(e.para)),
+    ignorados: ev.ignorados,
+  };
+  const descartados = ev.mensagens.length + ev.statuses.length + ev.ecos.length -
+    (eventos.mensagens.length + eventos.statuses.length + eventos.ecos.length);
+  return { eventos, descartados };
+}
+
 export const JANELA_24H_MS = 24 * 60 * 60 * 1000;
 
 export function dentroDaJanela(ultimoInbound: Date | null, agora = new Date()): boolean {

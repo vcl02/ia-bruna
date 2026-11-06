@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.13";
-import { processarMensagem, type Conversa, type DepsBot, type Repositorio } from "../functions/_shared/bot.ts";
+import { LIMITE_GLOBAL_DIA, LIMITE_POR_CONVERSA_HORA, processarMensagem, type Conversa, type DepsBot, type Repositorio } from "../functions/_shared/bot.ts";
 import type { Atendente, DecisaoLLM, ItemHistorico } from "../functions/_shared/llm.ts";
 import type { MensagemRecebida, ResultadoEnvio } from "../functions/_shared/whatsapp.ts";
 import { SALAO, type Servico } from "../functions/_shared/salao.ts";
@@ -13,6 +13,9 @@ class RepoFake implements Repositorio {
   saidas: { autor: string; texto: string }[] = [];
   humano: string | null = null;
   pausarDuranteLLM = false;
+  respostasConversaHora = 0;
+  respostasGlobaisDia = 0;
+  respostasDoBot(conversaId: string | null) { return Promise.resolve(conversaId ? this.respostasConversaHora : this.respostasGlobaisDia); }
   conversa() { return Promise.resolve({ ...this.c }); }
   historico(): Promise<ItemHistorico[]> { return Promise.resolve([{ autor: "cliente", texto: "oi" }]); }
   ultimaEntradaWamid() { return Promise.resolve(this.ultima); }
@@ -127,4 +130,26 @@ Deno.test("pausado enquanto a LLM pensava: descarta a resposta", async () => {
   t.repo.pausarDuranteLLM = true;
   assertEquals(await processarMensagem(t.deps, "c1", msg()), "pausado");
   assertEquals(t.enviados.length, 0);
+});
+
+Deno.test("limite por conversa: passa para humano sem chamar a LLM", async () => {
+  const t = montar(ok);
+  t.repo.respostasConversaHora = LIMITE_POR_CONVERSA_HORA;
+  assertEquals(await processarMensagem(t.deps, "c1", msg()), "passado_para_humano");
+  assertEquals(t.llm(), 0);
+  assertEquals(t.repo.c.botPausado, true);
+});
+
+Deno.test("limite global diário: passa para humano sem chamar a LLM", async () => {
+  const t = montar(ok);
+  t.repo.respostasGlobaisDia = LIMITE_GLOBAL_DIA;
+  assertEquals(await processarMensagem(t.deps, "c1", msg()), "passado_para_humano");
+  assertEquals(t.llm(), 0);
+});
+
+Deno.test("abaixo dos limites: responde normalmente", async () => {
+  const t = montar(ok);
+  t.repo.respostasConversaHora = LIMITE_POR_CONVERSA_HORA - 1;
+  t.repo.respostasGlobaisDia = LIMITE_GLOBAL_DIA - 1;
+  assertEquals(await processarMensagem(t.deps, "c1", msg()), "respondido");
 });

@@ -106,3 +106,29 @@ Deno.test("lista de números permitidos (fase de testes)", async () => {
   assertEquals(botPodeResponder(lerPermitidos(""), "qualquer"), true);
   assertEquals(botPodeResponder(lerPermitidos(undefined), "qualquer"), true);
 });
+
+Deno.test("filtro da fase de testes: nada de fora da lista passa (mensagem, eco, status)", async () => {
+  const { filtrarPorPermitidos, lerPermitidos } = await import("../functions/_shared/whatsapp.ts");
+  const ev = lerEventos({
+    entry: [{ changes: [
+      { field: "messages", value: { metadata: { phone_number_id: PNID },
+        messages: [
+          { id: "w1", from: "5511992090474", timestamp: "1", type: "text", text: { body: "teste" } },
+          { id: "w2", from: "5511888887777", timestamp: "1", type: "text", text: { body: "msg pessoal" } },
+        ],
+        statuses: [
+          { id: "s1", status: "delivered", timestamp: "1", recipient_id: "5511992090474" },
+          { id: "s2", status: "delivered", timestamp: "1", recipient_id: "5511888887777" },
+        ] } },
+      { field: "smb_message_echoes", value: { metadata: { phone_number_id: PNID },
+        message_echoes: [{ id: "e1", to: "5511888887777", timestamp: "1", type: "text", text: { body: "resposta pessoal" } }] } },
+    ] }],
+  }, PNID);
+  const { eventos, descartados } = filtrarPorPermitidos(ev, lerPermitidos("5511992090474"));
+  assertEquals(eventos.mensagens.map((m) => m.wamid), ["w1"]);
+  assertEquals(eventos.statuses.map((s) => s.wamid), ["s1"]);
+  assertEquals(eventos.ecos.length, 0);
+  assertEquals(descartados, 3);
+  // Lista vazia (produção): mantém tudo.
+  assertEquals(filtrarPorPermitidos(ev, lerPermitidos("")).descartados, 0);
+});

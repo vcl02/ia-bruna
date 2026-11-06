@@ -18,6 +18,8 @@ export interface Repositorio {
   ultimaEntradaWamid(conversaId: string): Promise<string | null>;
   temSaida(conversaId: string): Promise<boolean>;
   servicosAtivos(): Promise<Servico[]>;
+  /** Quantas respostas o bot mandou desde `desde` (na conversa, ou em todas se conversaId = null). */
+  respostasDoBot(conversaId: string | null, desde: Date): Promise<number>;
   registrarSaida(conversaId: string, autor: "bot" | "humano", texto: string, envio: ResultadoEnvio): Promise<void>;
   marcarHumano(conversaId: string, motivo: string): Promise<void>;
 }
@@ -43,6 +45,10 @@ const TIPOS_TEXTO = new Set(["text", "button", "interactive"]);
 const PEDIDO_HUMANO = /\b(atendente|humano|humana|pessoa de verdade|falar com (a|o)? ?(dona|bruna|algu[eé]m))\b/i;
 export const ESPERA_AGRUPAR_MS = 4000; // junta mensagens mandadas em sequência
 const LIMITE_HISTORICO = 20;
+// Proteção de custo: acima disso a conversa vai para humano sem chamar a LLM.
+export const LIMITE_POR_CONVERSA_HORA = 20;
+export const LIMITE_GLOBAL_DIA = 300;
+const HORA_MS = 60 * 60 * 1000;
 
 async function enviarComApresentacao(deps: DepsBot, c: Conversa, texto: string) {
   const primeira = !(await deps.repo.temSaida(c.id));
@@ -93,6 +99,14 @@ export async function processarMensagem(
   const faltando = camposFaltando(deps.salao, servicos);
   if (faltando.length > 0) {
     return passarParaHumano(deps, c, `dados do salão incompletos: ${faltando.join(", ")}`);
+  }
+
+  const agora = Date.now();
+  if (await deps.repo.respostasDoBot(c.id, new Date(agora - HORA_MS)) >= LIMITE_POR_CONVERSA_HORA) {
+    return passarParaHumano(deps, c, `limite de ${LIMITE_POR_CONVERSA_HORA} respostas automáticas por hora nesta conversa`);
+  }
+  if (await deps.repo.respostasDoBot(null, new Date(agora - 24 * HORA_MS)) >= LIMITE_GLOBAL_DIA) {
+    return passarParaHumano(deps, c, `limite diário de ${LIMITE_GLOBAL_DIA} respostas automáticas atingido`);
   }
 
   let decisao;
