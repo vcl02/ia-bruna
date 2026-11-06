@@ -4,8 +4,10 @@
 - Feito: migration `salao_inicial` (rodada pelo Victor no SQL Editor),
   Victor em `salao_equipe`, funções `salao-webhook` (v1, sem JWT) e
   `salao-responder` (v1, com JWT) publicadas no hub.
-- Pendente: `20261106000100_salao_revoga_gatilho.sql`, secrets `SALAO_*`,
-  webhook na Meta, serviços/preços, Resend.
+- 2026-11-06: secrets `SALAO_*` cadastrados, webhook assinado na Meta, primeira
+  conversa de teste entregue e lida. `salao-webhook` republicada com a lista
+  `SALAO_SO_RESPONDER_PARA` (só a Isa responde na fase de testes).
+- Pendente: `20261106000100_salao_revoga_gatilho.sql`, serviços/preços.
 - Obs.: as ferramentas de alteração do Supabase usadas pelo assistente
   travam numa confirmação que não chega ao usuário; DDL vai pelo SQL Editor.
 
