@@ -21,6 +21,7 @@ supabase/
   tests/                      testes Deno (sem rede, sem banco)
   config.toml                 verify_jwt por função
 web/index.html                tela de conversas e de serviços/preços (estática)
+site/                         política de privacidade (GitHub Pages, workflow em .github/workflows/pages.yml)
 docs/                         decisões, diagnóstico dos modelos, pendências, deploy
 ```
 
