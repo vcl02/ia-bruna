@@ -21,8 +21,8 @@ Registro curto. Data = quando foi decidido ou registrado aqui.
 - Captcha: não usar serviço de quebra. Pedir API ao suporte ou ficar no plano B.
 
 ## 2026-11-05 — LLM: Claude pela API da Anthropic
-- Modelo `claude-opus-5-5`, esforço `low` (conversa curta). Ajustar só
-  com base em conversas reais.
+- Modelo `claude-sonnet-5-5`, esforço `medium` (decisão do Victor em
+  2026-11-06, por custo; antes era `claude-opus-5-5` em `low`).
 - Saída estruturada (JSON com `resposta`, `passar_para_humano`, `motivo`,
   `intencao`), validada no código. Se falhar, recusar ou cortar: passa
   para humano.

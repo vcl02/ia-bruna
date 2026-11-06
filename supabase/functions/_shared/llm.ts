@@ -4,7 +4,7 @@
 import { Anthropic } from "./deps.ts";
 import type { DadosSalao, Servico } from "./salao.ts";
 
-export const MODELO = "claude-opus-5-5";
+export const MODELO = "claude-sonnet-5-5";
 
 export type Intencao = "duvida" | "agendar" | "remarcar_ou_cancelar" | "reclamacao" | "outro";
 
@@ -123,7 +123,7 @@ export class AtendenteClaude implements Atendente {
       fallbacks: "default", // se o modelo recusar, a API tenta outro modelo
       cache_control: { type: "ephemeral" },
       output_config: {
-        effort: "low", // conversa curta; aumentar só se a qualidade pedir
+        effort: "medium",
         format: { type: "json_schema", schema: SCHEMA },
       },
       system: montarSistema(this.salao, servicos),
