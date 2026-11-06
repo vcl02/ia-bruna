@@ -4,7 +4,7 @@
 //         responde 200 e processa a resposta do bot em segundo plano.
 
 import { assinaturaValida } from "../_shared/assinatura.ts";
-import { enviarTexto, lerEventos, type ConfigWhatsApp } from "../_shared/whatsapp.ts";
+import { botPodeResponder, enviarTexto, lerEventos, lerPermitidos, type ConfigWhatsApp } from "../_shared/whatsapp.ts";
 import { clienteServico, exigirEnv, RepositorioSupabase } from "../_shared/db.ts";
 import { processarMensagem, type DepsBot } from "../_shared/bot.ts";
 import { avisarEquipe, enviarEmailResend, lerConfigAviso } from "../_shared/aviso.ts";
@@ -58,6 +58,8 @@ export async function tratar(req: Request): Promise<Response> {
   const eventos = lerEventos(payload, wa.phoneNumberId);
   const repo = new RepositorioSupabase(clienteServico());
   const aviso = lerConfigAviso((n) => Deno.env.get(n));
+  // Fase de testes: se SALAO_SO_RESPONDER_PARA tiver números, o bot só responde a eles.
+  const permitidos = lerPermitidos(Deno.env.get("SALAO_SO_RESPONDER_PARA"));
 
   for (const s of eventos.statuses) {
     await repo.registrarStatus(s);
@@ -78,6 +80,10 @@ export async function tratar(req: Request): Promise<Response> {
   for (const m of eventos.mensagens) {
     const { conversaId, nova } = await repo.registrarEntrada(m);
     if (!nova) continue; // reenvio da Meta: já tratado
+    if (!botPodeResponder(permitidos, m.waId)) {
+      log("fora_da_lista_de_teste", { conversa: conversaId });
+      continue; // só grava; ninguém recebe resposta automática
+    }
     emSegundoPlano(
       processarMensagem(deps, conversaId, m).then((r) => log("processado", { conversa: conversaId, resultado: r })),
     );

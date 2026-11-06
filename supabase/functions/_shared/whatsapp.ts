@@ -200,6 +200,18 @@ export function enviarModelo(
   }, fetchFn);
 }
 
+/**
+ * Lista de números que o bot pode responder (fase de testes).
+ * Vazia = responde todo mundo.
+ */
+export function lerPermitidos(valor: string | undefined): Set<string> {
+  return new Set((valor ?? "").split(",").map((s) => s.replace(/\D/g, "")).filter(Boolean));
+}
+
+export function botPodeResponder(permitidos: Set<string>, waId: string): boolean {
+  return permitidos.size === 0 || permitidos.has(waId);
+}
+
 export const JANELA_24H_MS = 24 * 60 * 60 * 1000;
 
 export function dentroDaJanela(ultimoInbound: Date | null, agora = new Date()): boolean {

@@ -97,3 +97,12 @@ Deno.test("envio de modelo com parâmetros no corpo", async () => {
   assertEquals(body.template.language.code, "pt_BR");
   assertEquals(body.template.components[0].parameters.map((p: { text: string }) => p.text), ["a", "b"]);
 });
+
+Deno.test("lista de números permitidos (fase de testes)", async () => {
+  const { lerPermitidos, botPodeResponder } = await import("../functions/_shared/whatsapp.ts");
+  const p = lerPermitidos("+55 11 99999-0000, 5521888");
+  assertEquals(botPodeResponder(p, "5511999990000"), true);
+  assertEquals(botPodeResponder(p, "5511000000000"), false);
+  assertEquals(botPodeResponder(lerPermitidos(""), "qualquer"), true);
+  assertEquals(botPodeResponder(lerPermitidos(undefined), "qualquer"), true);
+});
