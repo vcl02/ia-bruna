@@ -1,5 +1,5 @@
 // Geração de resposta com Claude (API da Anthropic).
-// A chave fica só no secret ANTHROPIC_API_KEY do Supabase.
+// A chave fica só no secret SALAO_ANTHROPIC_API_KEY do Supabase.
 
 import { Anthropic } from "./deps.ts";
 import type { DadosSalao, Servico } from "./salao.ts";

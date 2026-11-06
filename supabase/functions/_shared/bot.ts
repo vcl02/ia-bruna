@@ -27,7 +27,7 @@ export interface DepsBot {
   atendente: Atendente;
   salao: DadosSalao;
   enviar(para: string, texto: string): Promise<ResultadoEnvio>;
-  /** Avisa a equipe (por WhatsApp) que uma conversa precisa de alguém. */
+  /** Avisa a equipe (por e-mail) que uma conversa precisa de alguém. */
   avisar(conversa: Conversa, motivo: string): Promise<void>;
   esperar(ms: number): Promise<void>;
   log(evento: string, dados?: Record<string, unknown>): void;

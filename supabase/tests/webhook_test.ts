@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.13";
-import { tratar } from "../functions/salao-webhook/index.ts";
+import { tratar } from "../functions/salao-webhook/handler.ts";
 
 Deno.env.set("SALAO_WHATSAPP_VERIFY_TOKEN", "tok");
 Deno.env.set("SALAO_META_APP_SECRET", "segredo");

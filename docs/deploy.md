@@ -1,5 +1,14 @@
 # Deploy de teste (cada passo exige confirmação antes de ser executado)
 
+## Estado em 2026-11-06
+- Feito: migration `salao_inicial` (rodada pelo Victor no SQL Editor),
+  Victor em `salao_equipe`, funções `salao-webhook` (v1, sem JWT) e
+  `salao-responder` (v1, com JWT) publicadas no hub.
+- Pendente: `20261106000100_salao_revoga_gatilho.sql`, secrets `SALAO_*`,
+  webhook na Meta, serviços/preços, Resend.
+- Obs.: as ferramentas de alteração do Supabase usadas pelo assistente
+  travam numa confirmação que não chega ao usuário; DDL vai pelo SQL Editor.
+
 Alvo durante os testes: projeto Supabase **hub** (`yzmyncxoskvqzdczaill`),
 isolado por prefixo. Número: o seu número já registrado na API.
 
