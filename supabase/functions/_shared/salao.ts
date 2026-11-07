@@ -18,8 +18,9 @@ export interface DadosSalao {
   horarioFuncionamento: string | null;
   formasPagamento: string | null;   // opcional
   tom: string | null;
-  mensagemApresentacao: string;     // vai antes da primeira resposta de cada conversa
-  mensagemPassagemHumano: string;
+  // Textos fixos com variações: o bot sorteia um, para não soar repetitivo.
+  mensagensApresentacao: string[];  // vai antes da primeira resposta de cada conversa
+  mensagensPassagemHumano: string[];
 }
 
 // Informado pelo usuário em 2026-11-05/06.
@@ -31,11 +32,17 @@ export const SALAO: DadosSalao = {
   endereco: "Rua Ettore Andreazza, 691 - Jardim Tietê, São Paulo - SP",
   horarioFuncionamento: "terça a sábado, das 10h às 18h",
   formasPagamento: null,
-  tom: "super amoroso e acolhedor: carinhoso, próximo, pode usar emojis com moderação (💖✨), sem exagero e sem ser formal",
-  mensagemApresentacao:
+  tom: "carinhoso, acolhedor e próximo, como uma pessoa do salão conversando no WhatsApp; nada formal",
+  mensagensApresentacao: [
     "Oii! Aqui é a assistente virtual da Bruna Frameschi Hair 💖 Sou um atendimento automático e, se precisar, chamo a Bruna pra você.",
-  mensagemPassagemHumano:
+    "Olá! Eu sou a assistente virtual do Bruna Frameschi Hair ✨ Respondo de forma automática e chamo a Bruna sempre que precisar.",
+    "Oi, tudo bem? Aqui é a assistente virtual da Bruna Frameschi Hair 🌸 Sou um atendimento automático, mas a Bruna está por perto se precisar.",
+  ],
+  mensagensPassagemHumano: [
     "Vou chamar a Bruna pra te responder, tá bom? Assim que ela puder, ela te retorna por aqui 💖",
+    "Essa a Bruna mesma vai te responder! Já avisei ela, e ela fala com você aqui assim que puder 😊",
+    "Deixa eu passar pra Bruna, que ela te ajuda melhor nisso. Ela te responde aqui mesmo, tá? 🌸",
+  ],
 };
 
 export function camposFaltando(d: DadosSalao, servicos: Servico[]): string[] {

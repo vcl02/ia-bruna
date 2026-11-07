@@ -32,6 +32,8 @@ export interface DepsBot {
   /** Avisa a equipe (por e-mail) que uma conversa precisa de alguém. */
   avisar(conversa: Conversa, motivo: string): Promise<void>;
   esperar(ms: number): Promise<void>;
+  /** Número entre 0 e 1 (Math.random). Injetável para os testes. */
+  aleatorio?: () => number;
   log(evento: string, dados?: Record<string, unknown>): void;
 }
 
@@ -50,9 +52,13 @@ export const LIMITE_POR_CONVERSA_HORA = 20;
 export const LIMITE_GLOBAL_DIA = 300;
 const HORA_MS = 60 * 60 * 1000;
 
+export function escolher<T>(opcoes: T[], aleatorio: () => number = Math.random): T {
+  return opcoes[Math.min(opcoes.length - 1, Math.floor(aleatorio() * opcoes.length))];
+}
+
 async function enviarComApresentacao(deps: DepsBot, c: Conversa, texto: string) {
   const primeira = !(await deps.repo.temSaida(c.id));
-  const final = primeira ? `${deps.salao.mensagemApresentacao}\n\n${texto}` : texto;
+  const final = primeira ? `${escolher(deps.salao.mensagensApresentacao, deps.aleatorio)}\n\n${texto}` : texto;
   const envio = await deps.enviar(c.waId, final);
   await deps.repo.registrarSaida(c.id, "bot", final, envio);
   return envio;
@@ -70,7 +76,7 @@ async function marcarEAvisar(deps: DepsBot, c: Conversa, motivo: string) {
 async function passarParaHumano(deps: DepsBot, c: Conversa, motivo: string): Promise<Resultado> {
   // Pausa antes de enviar: se o envio falhar, o bot já não volta a responder.
   await marcarEAvisar(deps, c, motivo);
-  const envio = await enviarComApresentacao(deps, c, deps.salao.mensagemPassagemHumano);
+  const envio = await enviarComApresentacao(deps, c, escolher(deps.salao.mensagensPassagemHumano, deps.aleatorio));
   deps.log("passado_para_humano", { conversa: c.id, motivo, envio_ok: envio.ok });
   return "passado_para_humano";
 }
@@ -124,7 +130,7 @@ export async function processarMensagem(
   if (decisao.passar_para_humano) {
     await marcarEAvisar(deps, c, decisao.motivo || "decisão do bot");
   }
-  const texto = decisao.resposta.trim() || deps.salao.mensagemPassagemHumano;
+  const texto = decisao.resposta.trim() || escolher(deps.salao.mensagensPassagemHumano, deps.aleatorio);
   const envio = await enviarComApresentacao(deps, c, texto);
   deps.log("respondido", { conversa: c.id, intencao: decisao.intencao, humano: decisao.passar_para_humano, envio_ok: envio.ok });
   return decisao.passar_para_humano ? "passado_para_humano" : "respondido";

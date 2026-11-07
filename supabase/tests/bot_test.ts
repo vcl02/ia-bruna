@@ -46,6 +46,7 @@ function montar(decisao: DecisaoLLM | Error) {
     enviar: (_p, t): Promise<ResultadoEnvio> => { enviados.push(t); return Promise.resolve({ ok: true, wamid: "w", httpStatus: 200, erro: null }); },
     avisar: (_c, motivo) => { avisos.push(motivo); return Promise.resolve(); },
     esperar: () => Promise.resolve(),
+    aleatorio: () => 0,
     log: () => {},
   };
   return { repo, deps, enviados, avisos, llm: () => chamadasLLM };
@@ -65,7 +66,7 @@ Deno.test("primeira resposta da conversa leva a apresentação", async () => {
   const t = montar(ok);
   t.repo.jaRespondeu = false;
   await processarMensagem(t.deps, "c1", msg());
-  assertEquals(t.enviados, [`${SALAO.mensagemApresentacao}\n\nA escova é R$ 50!`]);
+  assertEquals(t.enviados, [`${SALAO.mensagensApresentacao[0]}\n\nA escova é R$ 50!`]);
 });
 
 Deno.test("conversa pausada: não responde nem chama a LLM", async () => {
@@ -87,7 +88,7 @@ Deno.test("áudio passa para humano, avisa a equipe e não chama a LLM", async (
   assertEquals(await processarMensagem(t.deps, "c1", msg({ tipo: "audio", texto: null })), "passado_para_humano");
   assertEquals(t.llm(), 0);
   assertEquals(t.repo.c.botPausado, true);
-  assertEquals(t.enviados, [SALAO.mensagemPassagemHumano]);
+  assertEquals(SALAO.mensagensPassagemHumano.includes(t.enviados[0]), true);
   assertEquals(t.avisos.length, 1);
 });
 
@@ -152,4 +153,18 @@ Deno.test("abaixo dos limites: responde normalmente", async () => {
   t.repo.respostasConversaHora = LIMITE_POR_CONVERSA_HORA - 1;
   t.repo.respostasGlobaisDia = LIMITE_GLOBAL_DIA - 1;
   assertEquals(await processarMensagem(t.deps, "c1", msg()), "respondido");
+});
+
+Deno.test("escolher: sorteia entre as opções e nunca sai do intervalo", async () => {
+  const { escolher } = await import("../functions/_shared/bot.ts");
+  const ops = ["a", "b", "c"];
+  assertEquals(escolher(ops, () => 0), "a");
+  assertEquals(escolher(ops, () => 0.5), "b");
+  assertEquals(escolher(ops, () => 0.9999), "c");
+  assertEquals(escolher(ops, () => 1), "c");
+});
+
+Deno.test("textos fixos têm mais de uma variação", () => {
+  assertEquals(SALAO.mensagensApresentacao.length > 1, true);
+  assertEquals(SALAO.mensagensPassagemHumano.length > 1, true);
 });
