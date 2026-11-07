@@ -65,18 +65,27 @@ async function carregarMsgs() {
   if (noFim) caixa.scrollTop = caixa.scrollHeight;
 }
 
+let enviando = false; // evita mandar a mesma mensagem várias vezes por clique repetido
 $("envio").onsubmit = async (e) => {
   e.preventDefault();
   const texto = $("texto").value.trim();
-  if (!texto || !atual) return;
-  const { data, error } = await sb.functions.invoke("salao-responder", { body: { conversa_id: atual.id, texto } });
-  if (error) {
-    let msg = error.message;
-    try { msg = (await error.context.json()).erro || msg; } catch {}
-    return alert(msg);
+  if (!texto || !atual || enviando) return;
+  enviando = true;
+  const botao = $("envio").querySelector("button");
+  botao.disabled = true; botao.textContent = "Enviando…";
+  try {
+    const { error } = await sb.functions.invoke("salao-responder", { body: { conversa_id: atual.id, texto } });
+    if (error) {
+      let msg = error.message;
+      try { msg = (await error.context.json()).erro || msg; } catch {}
+      return alert(msg);
+    }
+    $("texto").value = "";
+    await carregarMsgs(); await carregarLista();
+  } finally {
+    enviando = false;
+    botao.disabled = false; botao.textContent = "Enviar";
   }
-  $("texto").value = "";
-  await carregarMsgs(); await carregarLista();
 };
 
 $("btnFalhas").onclick = async () => {
