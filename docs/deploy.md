@@ -7,7 +7,9 @@
 - 2026-11-06: secrets `SALAO_*` cadastrados, webhook assinado na Meta, primeira
   conversa de teste entregue e lida. `salao-webhook` republicada com a lista
   `SALAO_SO_RESPONDER_PARA` (só a Isa responde na fase de testes).
-- Pendente: `20261106000100_salao_revoga_gatilho.sql`, serviços/preços.
+- 2026-11-07: espelho do Minha Agenda no ar (`salao-sincronizar`, pg_cron
+  diário 09:07 UTC). Primeira sincronização: 64 serviços, horário e regras.
+  `salao-webhook` lê horário/regras do banco. Revoke da função de gatilho aplicado.
 - Obs.: as ferramentas de alteração do Supabase usadas pelo assistente
   travam numa confirmação que não chega ao usuário; DDL vai pelo SQL Editor.
 
