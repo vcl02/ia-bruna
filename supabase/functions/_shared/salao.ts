@@ -1,5 +1,6 @@
 // Dados fixos do salão usados pelo bot. Nada aqui é segredo.
-// Serviços e preços ficam no banco (tabela salao_servicos), editáveis pela tela.
+// Serviços, preços, horário e regras de agendamento vêm do Minha Agenda
+// (espelho diário em salao_servicos e salao_info).
 // Enquanto faltar campo obrigatório ou não houver serviço ativo, o bot não
 // chama a LLM: passa direto para humano.
 
