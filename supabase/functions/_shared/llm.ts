@@ -77,6 +77,22 @@ Regras:
 Saída: preencha "resposta" com a mensagem a enviar à cliente, "passar_para_humano", "motivo" (curto, para a equipe ler) e "intencao".`;
 }
 
+/** Data e hora atuais em São Paulo, por extenso. Ex.: "sexta-feira, 07/11/2026, 21:10". */
+export function agoraEmSaoPaulo(agora: Date = new Date()): string {
+  const dia = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long" }).format(agora);
+  const data = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric",
+  }).format(agora);
+  const hora = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(agora);
+  return `${dia}, ${data}, ${hora}`;
+}
+
+export function blocoAgora(agora: Date = new Date()): string {
+  return `Agora (horário de Brasília): ${agoraEmSaoPaulo(agora)}. Use isso para saber se o salão está aberto agora, que dia é hoje ou amanhã. Não invente disponibilidade de horários: para isso, mande o link de agendamento.`;
+}
+
 /** Converte o histórico em mensagens alternadas user/assistant, terminando em user. */
 export function montarMensagens(historico: ItemHistorico[]): Array<{ role: "user" | "assistant"; content: string }> {
   const msgs: Array<{ role: "user" | "assistant"; content: string }> = [];
@@ -109,7 +125,7 @@ export class FalhaLLM extends Error {}
 
 export class AtendenteClaude implements Atendente {
   private client: InstanceType<typeof Anthropic>;
-  constructor(private salao: DadosSalao, apiKey: string) {
+  constructor(private salao: DadosSalao, apiKey: string, private relogio: () => Date = () => new Date()) {
     this.client = new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 });
   }
 
@@ -121,12 +137,16 @@ export class AtendenteClaude implements Atendente {
       max_tokens: 4096,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default", // se o modelo recusar, a API tenta outro modelo
-      cache_control: { type: "ephemeral" },
       output_config: {
         effort: "medium",
         format: { type: "json_schema", schema: SCHEMA },
       },
-      system: montarSistema(this.salao, servicos),
+      // Parte fixa primeiro (com cache) e a data/hora por último, para a hora
+      // que muda a cada minuto não invalidar o cache das instruções.
+      system: [
+        { type: "text", text: montarSistema(this.salao, servicos), cache_control: { type: "ephemeral" } },
+        { type: "text", text: blocoAgora(this.relogio()) },
+      ],
       messages,
     });
     if (resp.stop_reason !== "end_turn") {

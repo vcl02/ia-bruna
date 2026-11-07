@@ -30,3 +30,11 @@ Deno.test("valida o formato da decisão", () => {
   assertEquals(validarDecisao({ resposta: "a", passar_para_humano: false, motivo: "", intencao: "xpto" }), null);
   assertEquals(validarDecisao(null), null);
 });
+
+Deno.test("data e hora em São Paulo", async () => {
+  const { agoraEmSaoPaulo, blocoAgora } = await import("../functions/_shared/llm.ts");
+  // 2026-11-07 00:10 UTC = sexta 06/11 21:10 em São Paulo (UTC-3, sem horário de verão).
+  const t = new Date("2026-11-07T00:10:00Z");
+  assertEquals(agoraEmSaoPaulo(t), "sexta-feira, 06/11/2026, 21:10");
+  assertStringIncludes(blocoAgora(t), "horário de Brasília");
+});
