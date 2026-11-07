@@ -20,7 +20,8 @@ supabase/
     _shared/                  módulos comuns (assinatura, WhatsApp, LLM, regras do bot, banco)
   tests/                      testes Deno (sem rede, sem banco)
   config.toml                 verify_jwt por função
-web/index.html                tela de conversas e de serviços/preços (estática)
+web/                          tela de conversas e de serviços/preços (estática)
+                              publicada em https://vcl02.github.io/ia-bruna/painel/
 site/                         política de privacidade (GitHub Pages, workflow em .github/workflows/pages.yml)
 docs/                         decisões, diagnóstico dos modelos, pendências, deploy
 ```
@@ -59,9 +60,13 @@ Dados fixos do salão (nome, endereço, horário, tom, textos) ficam em
 `supabase/functions/_shared/salao.ts`; serviços e preços, na tabela
 `salao_servicos`. Sem serviço ativo, o bot não usa a LLM e passa tudo para humano.
 
-Tela em teste local: copie `web/config.example.js` para `web/config.js`,
-rode `python3 -m http.server 8000` dentro de `web/` e abra
-`http://localhost:8000` (e use `SALAO_PAINEL_ORIGEM=http://localhost:8000`).
+Tela: publicada pelo workflow do Pages em `/painel/` (usa `web/config.publico.js`,
+com a chave publishable; quem protege os dados é o RLS). A página tem CSP (só
+conecta ao Supabase do projeto), SRI na biblioteca do CDN e `noindex`.
+`SALAO_PAINEL_ORIGEM` deve ser `https://vcl02.github.io`.
+Teste local: copie `web/config.publico.js` para `web/config.js`, rode
+`python3 -m http.server 8000` em `web/` e use `SALAO_PAINEL_ORIGEM=http://localhost:8000`.
+Ao trocar de projeto Supabase, atualize `config.publico.js` e o `connect-src` da CSP.
 
 ## Segredos
 

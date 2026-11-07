@@ -1,11 +1,12 @@
-# Publica SÓ a pasta site/ (política de privacidade) no GitHub Pages.
+# Publica no GitHub Pages SÓ a pasta site/ (política) e a tela de conversas
+# (web/index.html + web/painel.js + web/config.publico.js em /painel/).
 # Requer: Settings -> Pages -> Source: "GitHub Actions".
 name: Publicar site
 
 on:
   push:
     branches: [ccr-ca51e8e4-w90hp1, main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "web/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -26,8 +27,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Montar o site
+        run: |
+          mkdir -p _site/painel
+          cp -r site/. _site/
+          cp web/index.html web/painel.js _site/painel/
+          cp web/config.publico.js _site/painel/config.js
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
       - id: deploy
         uses: actions/deploy-pages@v4
