@@ -35,7 +35,7 @@ export const SALAO: DadosSalao = {
   tom: "carinhoso, acolhedor e próximo, como uma pessoa do salão conversando no WhatsApp; nada formal",
   mensagensApresentacao: [
     "Oii! Aqui é a assistente virtual da Bruna Frameschi Hair 💖 Sou um atendimento automático e, se precisar, chamo a Bruna pra você.",
-    "Olá! Eu sou a assistente virtual do Bruna Frameschi Hair ✨ Respondo de forma automática e chamo a Bruna sempre que precisar.",
+    "Olá! Eu sou a assistente virtual da Bruna Frameschi Hair ✨ Respondo de forma automática e chamo a Bruna sempre que precisar.",
     "Oi, tudo bem? Aqui é a assistente virtual da Bruna Frameschi Hair 🌸 Sou um atendimento automático, mas a Bruna está por perto se precisar.",
   ],
   mensagensPassagemHumano: [
