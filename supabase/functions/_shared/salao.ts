@@ -5,6 +5,7 @@
 // chama a LLM: passa direto para humano.
 
 export interface Servico {
+  origem_id?: number | null; // id no Minha Agenda (usado na consulta de horários)
   nome: string;
   preco: string;
   duracao?: string | null;
@@ -19,6 +20,7 @@ export interface DadosSalao {
   horarioFuncionamento: string | null; // espelhado do Minha Agenda (salao_info); este é só o valor inicial
   regrasAgendamento: string | null;    // espelhado do Minha Agenda: antecedência, cancelamento, atraso
   formasPagamento: string | null;   // opcional
+  equipe: string | null;            // quem faz o quê
   tom: string | null;
   // Textos fixos com variações: o bot sorteia um, para não soar repetitivo.
   mensagensApresentacao: string[];  // vai antes da primeira resposta de cada conversa
@@ -36,6 +38,8 @@ export const SALAO: DadosSalao = {
   horarioFuncionamento: "terça a sábado, das 8h às 12h e das 13h às 19h. Fechado: segunda e domingo.",
   regrasAgendamento: null,
   formasPagamento: null,
+  // Informado pelo usuário em 2026-11-07.
+  equipe: "Alessandra faz manicure e pedicure (unhas). A Bruna faz cabelo, massagem e todos os outros serviços.",
   tom: "carinhoso, acolhedor e próximo, como uma pessoa do salão conversando no WhatsApp; nada formal",
   mensagensApresentacao: [
     "Oii! Aqui é a assistente virtual da Bruna Frameschi Hair 💖 Sou um atendimento automático e, se precisar, chamo a Bruna pra você.",

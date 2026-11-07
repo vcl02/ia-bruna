@@ -5,6 +5,7 @@ import type { EcoEnviado, MensagemRecebida, ResultadoEnvio, StatusRecebido } fro
 import type { Servico } from "./salao.ts";
 import type { Conversa, Repositorio } from "./bot.ts";
 import type { ItemHistorico } from "./llm.ts";
+import type { ArmazemSessao, Sessao } from "./disponibilidade.ts";
 
 export function clienteServico(): SupabaseClient {
   return createClient(exigirEnv("SUPABASE_URL"), exigirEnv("SUPABASE_SERVICE_ROLE_KEY"), {
@@ -92,7 +93,7 @@ export class RepositorioSupabase implements Repositorio {
 
   async servicosAtivos(): Promise<Servico[]> {
     return checar(
-      await this.db.from("salao_servicos").select("nome, preco, duracao, observacao")
+      await this.db.from("salao_servicos").select("origem_id, nome, preco, duracao, observacao")
         .eq("ativo", true).order("ordem").order("nome"),
     ) as Servico[];
   }
@@ -193,6 +194,35 @@ export class RepositorioSupabase implements Repositorio {
         motivo_humano: motivo,
         atualizado_em: new Date().toISOString(),
       }).eq("id", conversaId),
+    );
+  }
+}
+
+/** Guarda a sessão anônima do Minha Agenda (tabela só do servidor). */
+export class ArmazemSessaoSupabase implements ArmazemSessao {
+  constructor(private db: SupabaseClient) {}
+
+  async ler(): Promise<Sessao | null> {
+    const r = checar(
+      await this.db.from("salao_sessao_minhaagenda").select("id_token, refresh_token, expira_em, cadastrado").eq("id", 1).maybeSingle(),
+    ) as { id_token: string; refresh_token: string; expira_em: string; cadastrado: boolean } | null;
+    return r ? { idToken: r.id_token, refreshToken: r.refresh_token, expiraEm: new Date(r.expira_em).getTime(), cadastrado: r.cadastrado } : null;
+  }
+
+  async gravar(s: Sessao | null): Promise<void> {
+    if (!s) {
+      checar(await this.db.from("salao_sessao_minhaagenda").delete().eq("id", 1));
+      return;
+    }
+    checar(
+      await this.db.from("salao_sessao_minhaagenda").upsert({
+        id: 1,
+        id_token: s.idToken,
+        refresh_token: s.refreshToken,
+        expira_em: new Date(s.expiraEm).toISOString(),
+        cadastrado: s.cadastrado,
+        atualizado_em: new Date().toISOString(),
+      }),
     );
   }
 }

@@ -34,6 +34,8 @@ export interface DepsBot {
   /** Avisa a equipe (por e-mail) que uma conversa precisa de alguém. */
   avisar(conversa: Conversa, motivo: string): Promise<void>;
   esperar(ms: number): Promise<void>;
+  /** Consulta de horários livres (ferramenta do modelo). Ausente = desligada. */
+  consultarHorarios?: (servicos: Servico[]) => (servicoId: number, data: string) => Promise<string>;
   /** Número entre 0 e 1 (Math.random). Injetável para os testes. */
   aleatorio?: () => number;
   log(evento: string, dados?: Record<string, unknown>): void;
@@ -121,7 +123,7 @@ export async function processarMensagem(
   let decisao;
   try {
     const historico = await deps.repo.historico(c.id, LIMITE_HISTORICO);
-    decisao = await deps.atendente.responder(historico, servicos, salao);
+    decisao = await deps.atendente.responder(historico, servicos, salao, deps.consultarHorarios?.(servicos));
   } catch (e) {
     deps.log("erro_llm", { conversa: c.id, erro: String(e) });
     return passarParaHumano(deps, c, "falha ao gerar resposta automática");

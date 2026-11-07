@@ -91,3 +91,18 @@ Registro curto. Data = quando foi decidido ou registrado aqui.
   nada; e-mail de resumo quando há mudança ou falha; a função não exige JWT
   (lê só dados públicos) e recusa rodar de novo em menos de 30 min.
 - A aba Serviços da tela ficou só leitura.
+
+## 2026-11-07 — Consulta de horários livres no Minha Agenda
+- Ferramenta `consultar_horarios(servico_id, data)` oferecida ao Claude; ele só
+  chama quando a cliente pergunta por vaga num dia. Até 3 consultas por resposta.
+- Fluxo igual ao da página: login anônimo no Firebase do Minha Agenda (chave
+  pública em `SALAO_MA_FIREBASE_KEY`), cadastro de convidada com identidade FIXA
+  (Bruna Frameschi, 11988973181, pedida pelo Victor), `availableEmployeesByService`
+  e `availableTimes` por profissional. Nunca usa dados de cliente; nunca agenda.
+- Sessão guardada em `salao_sessao_minhaagenda` (só service role), renovada
+  sozinha; 401/403 => login novo uma vez. Cache de 5 min por serviço+data.
+- Validações: serviço precisa estar na lista ativa; data de hoje até 15 dias.
+  Falha na consulta => o bot manda o link (nunca inventa horário).
+- Risco aceito: API exige sessão e não é documentada; pode mudar sem aviso.
+- Equipe no prompt: Alessandra (manicure e pedicure), Bruna (cabelo, massagem e
+  o resto).

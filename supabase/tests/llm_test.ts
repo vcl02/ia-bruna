@@ -44,3 +44,59 @@ Deno.test("prompt inclui as regras de agendamento quando existem", async () => {
   const s = montarSistema({ ...SALAO, regrasAgendamento: "Tolerância de atraso de 10 minutos." }, SERVICOS_TESTE);
   assertStringIncludes(s, "Regras do agendamento:\nTolerância de atraso de 10 minutos.");
 });
+
+// ---------- laço da ferramenta de horários, com cliente falso ----------
+import { AtendenteClaude, type ClienteMensagens } from "../functions/_shared/llm.ts";
+
+function respostaFinal(resposta: string) {
+  return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({ resposta, passar_para_humano: false, motivo: "", intencao: "agendar" }) }] };
+}
+
+function clienteFalso(roteiro: unknown[]) {
+  const pedidos: Record<string, unknown>[] = [];
+  const cliente = { beta: { messages: { create: (p: unknown) => { pedidos.push(structuredClone(p) as Record<string, unknown>); return Promise.resolve(roteiro.shift()); } } } };
+  return { cliente: cliente as unknown as ClienteMensagens, pedidos };
+}
+
+const SERVICOS_COM_ID = [{ origem_id: 5732343, nome: "Banho de Lua", preco: "R$ 30,00", duracao: "30 min" }];
+
+Deno.test("modelo consulta horários e responde com o resultado", async () => {
+  const { cliente, pedidos } = clienteFalso([
+    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "consultar_horarios", input: { servico_id: 5732343, data: "2026-11-10" } }] },
+    respostaFinal("Terça tem 9h e 11h com a Bruna!"),
+  ]);
+  const consultas: Array<[number, string]> = [];
+  const atendente = new AtendenteClaude("x", () => new Date("2026-11-07T12:00:00Z"), cliente);
+  const d = await atendente.responder([{ autor: "cliente", texto: "tem horário terça?" }], SERVICOS_COM_ID, SALAO,
+    (id, data) => { consultas.push([id, data]); return Promise.resolve("Bruna: 09:00, 11:00"); });
+  assertEquals(d.resposta, "Terça tem 9h e 11h com a Bruna!");
+  assertEquals(consultas, [[5732343, "2026-11-10"]]);
+  assertEquals(pedidos.length, 2);
+  const msgs = pedidos[1].messages as Array<{ role: string; content: unknown }>;
+  assertEquals(msgs.at(-2)?.role, "assistant"); // turno do modelo devolvido sem mudança
+  assertEquals((msgs.at(-1)?.content as Array<Record<string, unknown>>)[0], { type: "tool_result", tool_use_id: "t1", content: "Bruna: 09:00, 11:00" });
+  assertEquals((pedidos[0].tools as unknown[]).length, 1);
+  assertStringIncludes((pedidos[0].system as Array<{ text: string }>)[0].text, "Banho de Lua [id 5732343]");
+});
+
+Deno.test("sem consulta configurada, não oferece a ferramenta", async () => {
+  const { cliente, pedidos } = clienteFalso([respostaFinal("Pelo link você vê os horários!")]);
+  const atendente = new AtendenteClaude("x", () => new Date(), cliente);
+  await atendente.responder([{ autor: "cliente", texto: "tem horário?" }], SERVICOS_COM_ID, SALAO);
+  assertEquals(pedidos[0].tools, undefined);
+});
+
+Deno.test("limita o número de consultas por resposta", async () => {
+  const chamada = { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t", name: "consultar_horarios", input: { servico_id: 1, data: "2026-11-10" } }] };
+  const { cliente } = clienteFalso([chamada, chamada, chamada, chamada, chamada]);
+  const atendente = new AtendenteClaude("x", () => new Date(), cliente);
+  let erro = "";
+  try {
+    await atendente.responder([{ autor: "cliente", texto: "e quarta? e quinta?" }], SERVICOS_COM_ID, SALAO, () => Promise.resolve("ok"));
+  } catch (e) { erro = String(e); }
+  assertStringIncludes(erro, "stop_reason=tool_use");
+});
+
+Deno.test("prompt traz a equipe", () => {
+  assertStringIncludes(montarSistema(SALAO, SERVICOS_TESTE), "Equipe: Alessandra faz manicure e pedicure");
+});

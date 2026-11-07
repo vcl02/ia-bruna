@@ -20,10 +20,30 @@ export interface ItemHistorico {
   texto: string;
 }
 
+export type ConsultarHorarios = (servicoId: number, data: string) => Promise<string>;
+
 /** Interface para permitir testes sem chamar a API. */
 export interface Atendente {
-  responder(historico: ItemHistorico[], servicos: Servico[], salao: DadosSalao): Promise<DecisaoLLM>;
+  responder(historico: ItemHistorico[], servicos: Servico[], salao: DadosSalao, consultar?: ConsultarHorarios): Promise<DecisaoLLM>;
 }
+
+const FERRAMENTA_HORARIOS = {
+  name: "consultar_horarios",
+  description:
+    "Consulta no sistema de agendamento os horários livres de UM serviço numa data, por profissional. " +
+    "Use quando a cliente perguntar se tem horário/vaga num dia. Precisa do id do serviço (da lista de serviços) e da data.",
+  strict: true,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      servico_id: { type: "integer", description: "id do serviço, como aparece entre colchetes na lista de serviços" },
+      data: { type: "string", description: "data no formato AAAA-MM-DD" },
+    },
+    required: ["servico_id", "data"],
+    additionalProperties: false,
+  },
+};
+const MAX_CONSULTAS = 3;
 
 const SCHEMA = {
   type: "object",
@@ -43,7 +63,7 @@ const SCHEMA = {
 export function montarSistema(d: DadosSalao, lista: Servico[]): string {
   const servicos = lista
     .map((s) =>
-      `- ${s.nome}: ${s.preco}` +
+      `- ${s.nome}${s.origem_id ? ` [id ${s.origem_id}]` : ""}: ${s.preco}` +
       (s.duracao ? ` (duração: ${s.duracao})` : "") +
       (s.observacao ? ` — ${s.observacao}` : "")
     )
@@ -56,6 +76,7 @@ Responda em português do Brasil, com mensagens curtas, como numa conversa de Wh
 <dados_do_salao>
 Endereço: ${d.endereco}
 Horário de funcionamento: ${d.horarioFuncionamento}
+${d.equipe ? `Equipe: ${d.equipe}\n` : ""}
 ${d.formasPagamento ? `Formas de pagamento: ${d.formasPagamento}\n` : ""}Link de agendamento online: ${d.linkAgendamento}
 ${d.regrasAgendamento ? `Regras do agendamento:\n${d.regrasAgendamento}\n` : ""}
 Serviços e preços:
@@ -79,6 +100,7 @@ Estilo (para não soar como robô):
 - Escreva como uma pessoa real escreveria no WhatsApp. Varie as aberturas, as frases e as despedidas; não repita a estrutura da sua mensagem anterior nem copie frases prontas de mensagens anteriores.
 - Emojis: no máximo um por mensagem e só em parte das mensagens. Varie (por exemplo 💖 ✨ 🥰 😊 🌸 💇‍♀️ 💅) e não repita o emoji da sua mensagem anterior. Não coloque emoji no fim de toda mensagem.
 - Chame de "amor" ou "linda" só de vez em quando, não em toda mensagem.
+- Horários livres: se a cliente perguntar se tem vaga num dia, use a ferramenta consultar_horarios (se estiver disponível) com o id do serviço e a data. Se ela não disse o serviço ou o dia, pergunte antes. Passe os horários dizendo que é o que aparece agora e que ela confirma pelo link; você não reserva nada. Nunca diga horários livres sem consultar. Se a consulta falhar, mande o link.
 - Mande o link de agendamento quando a cliente quiser agendar ou perguntar como agendar. Se você já mandou o link nas últimas mensagens, não repita, a menos que ela peça.
 
 Saída: preencha "resposta" com a mensagem a enviar à cliente, "passar_para_humano", "motivo" (curto, para a equipe ler) e "intencao".`;
@@ -130,46 +152,77 @@ export function validarDecisao(bruto: unknown): DecisaoLLM | null {
 
 export class FalhaLLM extends Error {}
 
+/** Só o pedaço do SDK que usamos (permite cliente falso nos testes). */
+export interface ClienteMensagens {
+  beta: { messages: { create(p: Anthropic.Beta.Messages.MessageCreateParamsNonStreaming): Promise<Anthropic.Beta.Messages.BetaMessage> } };
+}
+
 export class AtendenteClaude implements Atendente {
-  private client: InstanceType<typeof Anthropic>;
-  constructor(apiKey: string, private relogio: () => Date = () => new Date()) {
-    this.client = new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 });
+  private client: ClienteMensagens;
+  constructor(apiKey: string, private relogio: () => Date = () => new Date(), cliente?: ClienteMensagens) {
+    this.client = cliente ?? new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 });
   }
 
-  async responder(historico: ItemHistorico[], servicos: Servico[], salao: DadosSalao): Promise<DecisaoLLM> {
-    const messages = montarMensagens(historico);
+  async responder(
+    historico: ItemHistorico[],
+    servicos: Servico[],
+    salao: DadosSalao,
+    consultar?: ConsultarHorarios,
+  ): Promise<DecisaoLLM> {
+    const messages: Anthropic.Beta.Messages.BetaMessageParam[] = montarMensagens(historico);
     if (messages.length === 0) throw new FalhaLLM("histórico sem mensagem da cliente");
-    const resp = await this.client.beta.messages.create({
-      model: MODELO,
-      max_tokens: 4096,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default", // se o modelo recusar, a API tenta outro modelo
-      output_config: {
-        effort: "medium",
-        format: { type: "json_schema", schema: SCHEMA },
-      },
-      // Parte fixa primeiro (com cache) e a data/hora por último, para a hora
-      // que muda a cada minuto não invalidar o cache das instruções.
-      system: [
-        { type: "text", text: montarSistema(salao, servicos), cache_control: { type: "ephemeral" } },
-        { type: "text", text: blocoAgora(this.relogio()) },
-      ],
-      messages,
-    });
-    if (resp.stop_reason !== "end_turn") {
-      throw new FalhaLLM(`stop_reason=${resp.stop_reason}`);
+    // Parte fixa primeiro (com cache) e a data/hora por último, para a hora
+    // que muda a cada minuto não invalidar o cache das instruções.
+    const system: Anthropic.Beta.Messages.BetaTextBlockParam[] = [
+      { type: "text", text: montarSistema(salao, servicos), cache_control: { type: "ephemeral" } },
+      { type: "text", text: blocoAgora(this.relogio()) },
+    ];
+    for (let rodada = 0; rodada <= MAX_CONSULTAS; rodada++) {
+      const resp = await this.client.beta.messages.create({
+        model: MODELO,
+        max_tokens: 4096,
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default", // se o modelo recusar, a API tenta outro modelo
+        output_config: {
+          effort: "medium",
+          format: { type: "json_schema", schema: SCHEMA },
+        },
+        ...(consultar ? { tools: [FERRAMENTA_HORARIOS] } : {}),
+        system,
+        messages,
+      });
+      if (resp.stop_reason === "tool_use" && consultar && rodada < MAX_CONSULTAS) {
+        const resultados: Anthropic.Beta.Messages.BetaToolResultBlockParam[] = [];
+        for (const bloco of resp.content) {
+          if (bloco.type !== "tool_use") continue;
+          const entrada = bloco.input as { servico_id?: unknown; data?: unknown };
+          const conteudo = await consultar(Number(entrada.servico_id), String(entrada.data ?? ""));
+          resultados.push({ type: "tool_result", tool_use_id: bloco.id, content: conteudo });
+        }
+        // Devolve o turno do modelo sem alterar (inclui blocos de raciocínio) + os resultados.
+        messages.push({ role: "assistant", content: resp.content }, { role: "user", content: resultados });
+        continue;
+      }
+      return interpretar(resp);
     }
-    const texto = resp.content
-      .flatMap((b) => (b.type === "text" ? [b.text] : []))
-      .join("");
-    let json: unknown;
-    try {
-      json = JSON.parse(texto);
-    } catch {
-      throw new FalhaLLM("resposta não é JSON");
-    }
-    const decisao = validarDecisao(json);
-    if (!decisao) throw new FalhaLLM("JSON fora do formato");
-    return decisao;
+    throw new FalhaLLM("consultas de horário demais numa resposta");
   }
+}
+
+function interpretar(resp: Anthropic.Beta.Messages.BetaMessage): DecisaoLLM {
+  if (resp.stop_reason !== "end_turn") {
+    throw new FalhaLLM(`stop_reason=${resp.stop_reason}`);
+  }
+  const texto = resp.content
+    .flatMap((b) => (b.type === "text" ? [b.text] : []))
+    .join("");
+  let json: unknown;
+  try {
+    json = JSON.parse(texto);
+  } catch {
+    throw new FalhaLLM("resposta não é JSON");
+  }
+  const decisao = validarDecisao(json);
+  if (!decisao) throw new FalhaLLM("JSON fora do formato");
+  return decisao;
 }

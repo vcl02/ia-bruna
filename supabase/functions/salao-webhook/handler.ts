@@ -5,7 +5,8 @@
 
 import { assinaturaValida } from "../_shared/assinatura.ts";
 import { enviarTexto, filtrarPorPermitidos, lerEventos, lerPermitidos, type ConfigWhatsApp } from "../_shared/whatsapp.ts";
-import { clienteServico, exigirEnv, RepositorioSupabase } from "../_shared/db.ts";
+import { ArmazemSessaoSupabase, clienteServico, exigirEnv, RepositorioSupabase } from "../_shared/db.ts";
+import { ConsultaMinhaAgenda, ferramentaHorarios } from "../_shared/disponibilidade.ts";
 import { processarMensagem, type DepsBot } from "../_shared/bot.ts";
 import { avisarEquipe, enviarEmailResend, lerConfigAviso } from "../_shared/aviso.ts";
 import { AtendenteClaude } from "../_shared/llm.ts";
@@ -61,7 +62,11 @@ export async function tratar(req: Request): Promise<Response> {
     lerEventos(payload, wa.phoneNumberId),
     lerPermitidos(Deno.env.get("SALAO_SO_RESPONDER_PARA")),
   );
-  const repo = new RepositorioSupabase(clienteServico());
+  const db = clienteServico();
+  const repo = new RepositorioSupabase(db);
+  // Consulta de horários livres: só liga se a chave do Firebase do Minha Agenda estiver configurada.
+  const chaveFirebase = Deno.env.get("SALAO_MA_FIREBASE_KEY");
+  const consulta = chaveFirebase ? new ConsultaMinhaAgenda(chaveFirebase, new ArmazemSessaoSupabase(db)) : null;
   const aviso = lerConfigAviso((n) => Deno.env.get(n));
 
   for (const s of eventos.statuses) {
@@ -77,6 +82,14 @@ export async function tratar(req: Request): Promise<Response> {
     enviar: (para, texto) => enviarTexto(wa, para, texto),
     avisar: (c, motivo) => avisarEquipe(aviso, { enviarEmail: (cfg, e) => enviarEmailResend(cfg, e), log }, c, motivo),
     esperar: (ms) => new Promise((r) => setTimeout(r, ms)),
+    consultarHorarios: consulta
+      ? (servicos) => ferramentaHorarios(
+        consulta,
+        new Set(servicos.flatMap((s) => (s.origem_id ? [s.origem_id] : []))),
+        15, // o agendamento online abre até 15 dias à frente (Minha Agenda)
+        log,
+      )
+      : undefined,
     log,
   };
 
