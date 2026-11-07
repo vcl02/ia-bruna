@@ -17,6 +17,7 @@ supabase/
   functions/
     salao-webhook/            webhook da Meta (verificação, assinatura, gravação, bot)
     salao-responder/          envio manual pela tela de conversas
+    salao-sincronizar/        espelho diário do Minha Agenda (serviços, horário, regras)
     _shared/                  módulos comuns (assinatura, WhatsApp, LLM, regras do bot, banco)
   tests/                      testes Deno (sem rede, sem banco)
   config.toml                 verify_jwt por função
@@ -56,9 +57,11 @@ deno task test     # testes
 deno task check    # checagem de tipos das funções
 ```
 
-Dados fixos do salão (nome, endereço, horário, tom, textos) ficam em
-`supabase/functions/_shared/salao.ts`; serviços e preços, na tabela
-`salao_servicos`. Sem serviço ativo, o bot não usa a LLM e passa tudo para humano.
+Dados fixos do salão (nome, endereço, tom, textos) ficam em
+`supabase/functions/_shared/salao.ts`. Serviços, preços, horário e regras de
+agendamento são espelhados do Minha Agenda uma vez por dia (`salao-sincronizar`)
+nas tabelas `salao_servicos` e `salao_info`. Sem serviço ativo, o bot não usa a
+LLM e passa tudo para humano.
 
 Tela: publicada pelo workflow do Pages em `/painel/` (usa `web/config.publico.js`,
 com a chave publishable; quem protege os dados é o RLS). A página tem CSP (só

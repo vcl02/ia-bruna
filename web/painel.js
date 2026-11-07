@@ -101,41 +101,39 @@ $("btnFalhas").onclick = async () => {
 };
 
 
-// Serviços e preços: o bot só fala do que estiver ativo aqui.
-function linhaServico(sv) {
-  const campo = (nome, ph, v) => el("input", { placeholder: ph, value: v ?? "", "data-campo": nome });
-  const ativo = el("input", { type: "checkbox", "data-campo": "ativo" }); ativo.checked = sv.ativo ?? true;
-  const ordem = el("input", { type: "number", value: String(sv.ordem ?? 0), "data-campo": "ordem", title: "ordem" });
-  const salvar = el("button", {}, sv.id ? "Salvar" : "Adicionar");
-  const linha = el("div", { class: "srv" },
-    campo("nome", "Serviço", sv.nome), campo("preco", "Preço (R$)", sv.preco),
-    campo("duracao", "Duração", sv.duracao), campo("observacao", "Observação", sv.observacao),
-    ordem, el("label", {}, ativo, "ativo"), salvar);
-  salvar.onclick = async () => {
-    const v = {};
-    for (const i of linha.querySelectorAll("[data-campo]")) {
-      const c = i.dataset.campo;
-      v[c] = c === "ativo" ? i.checked : c === "ordem" ? Number(i.value) || 0 : (i.value.trim() || null);
-    }
-    if (!v.nome || !v.preco) return alert("Serviço e preço são obrigatórios.");
-    v.atualizado_em = new Date().toISOString();
-    const { error } = sv.id
-      ? await sb.from("salao_servicos").update(v).eq("id", sv.id)
-      : await sb.from("salao_servicos").insert(v);
-    if (error) return alert(error.message);
-    await abrirServicos();
-  };
-  return linha;
+// Serviços: espelho do Minha Agenda (só leitura). Para mudar, altere no Minha Agenda;
+// a sincronização diária traz a mudança para cá.
+function textoSincronizacao(info) {
+  try {
+    const u = JSON.parse(info.ultima_sincronizacao || "null");
+    if (!u) return "Ainda não sincronizado com o Minha Agenda.";
+    const quando = hora(u.em);
+    return u.ok
+      ? `Espelho do Minha Agenda · última sincronização: ${quando}`
+      : `A última sincronização falhou (${quando}): ${u.motivo}. Os dados abaixo são da sincronização anterior.`;
+  } catch { return ""; }
 }
 
 async function abrirServicos() {
   atual = null;
   for (const id of ["msgs", "envio", "falhas"]) $(id).classList.add("oculto");
   $("servicos").classList.remove("oculto");
-  $("topo").replaceChildren(el("strong", {}, "Serviços e preços (o bot só usa os ativos)"));
-  const { data, error } = await sb.from("salao_servicos").select("*").order("ordem").order("nome");
-  if (error) return alert(error.message);
-  $("servicos").replaceChildren(...data.map(linhaServico), el("h3", {}, "Novo serviço"), linhaServico({}));
+  $("topo").replaceChildren(el("strong", {}, "Serviços (espelho do Minha Agenda)"));
+  const [servicos, infos] = await Promise.all([
+    sb.from("salao_servicos").select("nome, preco, duracao, categoria, ativo").order("ordem").order("nome"),
+    sb.from("salao_info").select("chave, valor"),
+  ]);
+  if (servicos.error) return alert(servicos.error.message);
+  const info = Object.fromEntries((infos.data || []).map((x) => [x.chave, x.valor]));
+  const cols = ["nome", "preco", "duracao", "categoria"];
+  const tabela = el("table", {},
+    el("tr", {}, ...["Serviço", "Preço", "Duração", "Categoria"].map((c) => el("th", {}, c))),
+    ...servicos.data.filter((s) => s.ativo).map((s) => el("tr", {}, ...cols.map((c) => el("td", {}, s[c] ?? "")))));
+  $("servicos").replaceChildren(
+    el("p", {}, textoSincronizacao(info)),
+    info.horario_funcionamento ? el("p", {}, "Horário: " + info.horario_funcionamento) : null,
+    el("p", {}, "Para mudar serviço, preço ou horário, altere no Minha Agenda. O bot atualiza sozinho uma vez por dia."),
+    tabela);
 }
 $("btnServicos").onclick = abrirServicos;
 

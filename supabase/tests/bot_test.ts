@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1.0.13";
 import { LIMITE_GLOBAL_DIA, LIMITE_POR_CONVERSA_HORA, processarMensagem, type Conversa, type DepsBot, type Repositorio } from "../functions/_shared/bot.ts";
 import type { Atendente, DecisaoLLM, ItemHistorico } from "../functions/_shared/llm.ts";
 import type { MensagemRecebida, ResultadoEnvio } from "../functions/_shared/whatsapp.ts";
-import { SALAO, type Servico } from "../functions/_shared/salao.ts";
+import { SALAO, type DadosSalao, type Servico } from "../functions/_shared/salao.ts";
 import { SERVICOS_TESTE } from "./salao_teste.ts";
 
 class RepoFake implements Repositorio {
@@ -21,6 +21,8 @@ class RepoFake implements Repositorio {
   ultimaEntradaWamid() { return Promise.resolve(this.ultima); }
   temSaida() { return Promise.resolve(this.jaRespondeu); }
   servicosAtivos() { return Promise.resolve(this.servicos); }
+  info: Record<string, string> = {};
+  infoSalao() { return Promise.resolve(this.info); }
   registrarSaida(_c: string, autor: "bot" | "humano", texto: string) { this.saidas.push({ autor, texto }); return Promise.resolve(); }
   marcarHumano(_c: string, motivo: string) { this.humano = motivo; this.c.botPausado = true; return Promise.resolve(); }
 }
@@ -34,8 +36,10 @@ function montar(decisao: DecisaoLLM | Error) {
   const enviados: string[] = [];
   const avisos: string[] = [];
   let chamadasLLM = 0;
+  const salaoRecebido: { valor?: DadosSalao } = {};
   const atendente: Atendente = {
-    responder: () => {
+    responder: (_h, _s, salao) => {
+      salaoRecebido.valor = salao;
       chamadasLLM++;
       if (repo.pausarDuranteLLM) repo.c.botPausado = true;
       return decisao instanceof Error ? Promise.reject(decisao) : Promise.resolve(decisao);
@@ -49,7 +53,7 @@ function montar(decisao: DecisaoLLM | Error) {
     aleatorio: () => 0,
     log: () => {},
   };
-  return { repo, deps, enviados, avisos, llm: () => chamadasLLM };
+  return { repo, deps, enviados, avisos, salaoRecebido, llm: () => chamadasLLM };
 }
 
 const ok: DecisaoLLM = { resposta: "A escova é R$ 50!", passar_para_humano: false, motivo: "", intencao: "duvida" };
@@ -167,4 +171,13 @@ Deno.test("escolher: sorteia entre as opções e nunca sai do intervalo", async 
 Deno.test("textos fixos têm mais de uma variação", () => {
   assertEquals(SALAO.mensagensApresentacao.length > 1, true);
   assertEquals(SALAO.mensagensPassagemHumano.length > 1, true);
+});
+
+Deno.test("horário e regras do Minha Agenda chegam ao modelo", async () => {
+  const t = montar(ok);
+  t.repo.info = { horario_funcionamento: "terça, das 9h às 17h.", regras_agendamento: "Tolerância de 10 min." };
+  await processarMensagem(t.deps, "c1", msg());
+  assertEquals(t.salaoRecebido.valor?.horarioFuncionamento, "terça, das 9h às 17h.");
+  assertEquals(t.salaoRecebido.valor?.regrasAgendamento, "Tolerância de 10 min.");
+  assertEquals(t.salaoRecebido.valor?.endereco, SALAO.endereco); // endereço continua fixo
 });

@@ -72,7 +72,7 @@ export async function tratar(req: Request): Promise<Response> {
 
   const deps: DepsBot = {
     repo,
-    atendente: new AtendenteClaude(SALAO, exigirEnv("SALAO_ANTHROPIC_API_KEY")),
+    atendente: new AtendenteClaude(exigirEnv("SALAO_ANTHROPIC_API_KEY")),
     salao: SALAO,
     enviar: (para, texto) => enviarTexto(wa, para, texto),
     avisar: (c, motivo) => avisarEquipe(aviso, { enviarEmail: (cfg, e) => enviarEmailResend(cfg, e), log }, c, motivo),

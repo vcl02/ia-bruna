@@ -66,3 +66,13 @@ export async function enviarEmailResend(
   await resp.body?.cancel();
   return { ok: resp.ok, status: resp.status };
 }
+
+/** E-mail livre para a equipe (ex.: resumo da sincronização). Sem configuração, só registra no log. */
+export async function enviarResumo(cfg: ConfigAviso, deps: DepsAviso, assunto: string, texto: string): Promise<void> {
+  if (!cfg.apiKey || !cfg.de || cfg.para.length === 0) {
+    deps.log("resumo_equipe", { via: "nenhum", assunto });
+    return;
+  }
+  const r = await deps.enviarEmail(cfg, { de: cfg.de, para: cfg.para, assunto, texto });
+  deps.log("resumo_equipe", { via: "email", ok: r.ok, http: r.status, assunto });
+}

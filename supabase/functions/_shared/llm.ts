@@ -22,7 +22,7 @@ export interface ItemHistorico {
 
 /** Interface para permitir testes sem chamar a API. */
 export interface Atendente {
-  responder(historico: ItemHistorico[], servicos: Servico[]): Promise<DecisaoLLM>;
+  responder(historico: ItemHistorico[], servicos: Servico[], salao: DadosSalao): Promise<DecisaoLLM>;
 }
 
 const SCHEMA = {
@@ -57,6 +57,7 @@ Responda em português do Brasil, com mensagens curtas, como numa conversa de Wh
 Endereço: ${d.endereco}
 Horário de funcionamento: ${d.horarioFuncionamento}
 ${d.formasPagamento ? `Formas de pagamento: ${d.formasPagamento}\n` : ""}Link de agendamento online: ${d.linkAgendamento}
+${d.regrasAgendamento ? `Regras do agendamento:\n${d.regrasAgendamento}\n` : ""}
 Serviços e preços:
 ${servicos}
 </dados_do_salao>
@@ -131,11 +132,11 @@ export class FalhaLLM extends Error {}
 
 export class AtendenteClaude implements Atendente {
   private client: InstanceType<typeof Anthropic>;
-  constructor(private salao: DadosSalao, apiKey: string, private relogio: () => Date = () => new Date()) {
+  constructor(apiKey: string, private relogio: () => Date = () => new Date()) {
     this.client = new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 });
   }
 
-  async responder(historico: ItemHistorico[], servicos: Servico[]): Promise<DecisaoLLM> {
+  async responder(historico: ItemHistorico[], servicos: Servico[], salao: DadosSalao): Promise<DecisaoLLM> {
     const messages = montarMensagens(historico);
     if (messages.length === 0) throw new FalhaLLM("histórico sem mensagem da cliente");
     const resp = await this.client.beta.messages.create({
@@ -150,7 +151,7 @@ export class AtendenteClaude implements Atendente {
       // Parte fixa primeiro (com cache) e a data/hora por último, para a hora
       // que muda a cada minuto não invalidar o cache das instruções.
       system: [
-        { type: "text", text: montarSistema(this.salao, servicos), cache_control: { type: "ephemeral" } },
+        { type: "text", text: montarSistema(salao, servicos), cache_control: { type: "ephemeral" } },
         { type: "text", text: blocoAgora(this.relogio()) },
       ],
       messages,

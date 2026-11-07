@@ -38,3 +38,9 @@ Deno.test("data e hora em São Paulo", async () => {
   assertEquals(agoraEmSaoPaulo(t), "sexta-feira, 06/11/2026, 21:10");
   assertStringIncludes(blocoAgora(t), "horário de Brasília");
 });
+
+Deno.test("prompt inclui as regras de agendamento quando existem", async () => {
+  const { montarSistema } = await import("../functions/_shared/llm.ts");
+  const s = montarSistema({ ...SALAO, regrasAgendamento: "Tolerância de atraso de 10 minutos." }, SERVICOS_TESTE);
+  assertStringIncludes(s, "Regras do agendamento:\nTolerância de atraso de 10 minutos.");
+});

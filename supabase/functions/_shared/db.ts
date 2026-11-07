@@ -97,6 +97,11 @@ export class RepositorioSupabase implements Repositorio {
     ) as Servico[];
   }
 
+  async infoSalao(): Promise<Record<string, string>> {
+    const r = checar(await this.db.from("salao_info").select("chave, valor")) as { chave: string; valor: string }[];
+    return Object.fromEntries(r.map((x) => [x.chave, x.valor]));
+  }
+
   async respostasDoBot(conversaId: string | null, desde: Date): Promise<number> {
     let q = this.db.from("salao_mensagens").select("id", { count: "exact", head: true })
       .eq("autor", "bot").gte("criado_em", desde.toISOString());

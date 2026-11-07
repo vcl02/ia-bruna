@@ -2,7 +2,7 @@
 // tudo entra por `DepsBot`, o que permite testar com dublês.
 
 import type { MensagemRecebida, ResultadoEnvio } from "./whatsapp.ts";
-import { camposFaltando, type DadosSalao, type Servico } from "./salao.ts";
+import { camposFaltando, comInfoEspelhada, type DadosSalao, type Servico } from "./salao.ts";
 import type { Atendente, ItemHistorico } from "./llm.ts";
 
 export interface Conversa {
@@ -18,6 +18,8 @@ export interface Repositorio {
   ultimaEntradaWamid(conversaId: string): Promise<string | null>;
   temSaida(conversaId: string): Promise<boolean>;
   servicosAtivos(): Promise<Servico[]>;
+  /** Horário e regras espelhados do Minha Agenda (tabela salao_info). */
+  infoSalao(): Promise<Record<string, string>>;
   /** Quantas respostas o bot mandou desde `desde` (na conversa, ou em todas se conversaId = null). */
   respostasDoBot(conversaId: string | null, desde: Date): Promise<number>;
   registrarSaida(conversaId: string, autor: "bot" | "humano", texto: string, envio: ResultadoEnvio): Promise<void>;
@@ -102,7 +104,8 @@ export async function processarMensagem(
     return passarParaHumano(deps, c, "cliente pediu atendimento humano");
   }
   const servicos = await deps.repo.servicosAtivos();
-  const faltando = camposFaltando(deps.salao, servicos);
+  const salao = comInfoEspelhada(deps.salao, await deps.repo.infoSalao());
+  const faltando = camposFaltando(salao, servicos);
   if (faltando.length > 0) {
     return passarParaHumano(deps, c, `dados do salão incompletos: ${faltando.join(", ")}`);
   }
@@ -118,7 +121,7 @@ export async function processarMensagem(
   let decisao;
   try {
     const historico = await deps.repo.historico(c.id, LIMITE_HISTORICO);
-    decisao = await deps.atendente.responder(historico, servicos);
+    decisao = await deps.atendente.responder(historico, servicos, salao);
   } catch (e) {
     deps.log("erro_llm", { conversa: c.id, erro: String(e) });
     return passarParaHumano(deps, c, "falha ao gerar resposta automática");

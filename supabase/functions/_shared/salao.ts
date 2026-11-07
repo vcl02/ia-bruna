@@ -15,7 +15,8 @@ export interface DadosSalao {
   nomeAtendente: string | null;
   linkAgendamento: string | null;
   endereco: string | null;
-  horarioFuncionamento: string | null;
+  horarioFuncionamento: string | null; // espelhado do Minha Agenda (salao_info); este é só o valor inicial
+  regrasAgendamento: string | null;    // espelhado do Minha Agenda: antecedência, cancelamento, atraso
   formasPagamento: string | null;   // opcional
   tom: string | null;
   // Textos fixos com variações: o bot sorteia um, para não soar repetitivo.
@@ -30,7 +31,9 @@ export const SALAO: DadosSalao = {
   linkAgendamento: "https://online.maapp.com.br/Brunaframeschihair",
   // Confirmado pelo usuário em 2026-11-06.
   endereco: "Rua Ettore Andreazza, 691 - Jardim Tietê, São Paulo - SP",
-  horarioFuncionamento: "terça a sábado, das 10h às 18h",
+  // Valor inicial, igual ao Minha Agenda em 2026-11-07. A sincronização diária sobrescreve.
+  horarioFuncionamento: "terça a sábado, das 8h às 12h e das 13h às 19h. Fechado: segunda e domingo.",
+  regrasAgendamento: null,
   formasPagamento: null,
   tom: "carinhoso, acolhedor e próximo, como uma pessoa do salão conversando no WhatsApp; nada formal",
   mensagensApresentacao: [
@@ -44,6 +47,15 @@ export const SALAO: DadosSalao = {
     "Deixa eu passar pra Bruna, que ela te ajuda melhor nisso. Ela te responde aqui mesmo, tá? 🌸",
   ],
 };
+
+/** Aplica o que veio do Minha Agenda (tabela salao_info) sobre os dados fixos. */
+export function comInfoEspelhada(d: DadosSalao, info: Record<string, string>): DadosSalao {
+  return {
+    ...d,
+    horarioFuncionamento: info.horario_funcionamento || d.horarioFuncionamento,
+    regrasAgendamento: info.regras_agendamento || d.regrasAgendamento,
+  };
+}
 
 export function camposFaltando(d: DadosSalao, servicos: Servico[]): string[] {
   const faltando: string[] = [];

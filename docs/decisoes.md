@@ -72,3 +72,22 @@ Registro curto. Data = quando foi decidido ou registrado aqui.
 - O número do Victor, registrado na API, continua 100% no app (relato).
 - O número da Bruna vai para a API mantendo o app no celular.
 - Resposta dada pelo app pausa o bot da conversa (evento de eco).
+
+## 2026-11-07 — Espelho do Minha Agenda
+- O Minha Agenda é a fonte da verdade. A Bruna continua usando só ele; o bot
+  funciona "apesar dela".
+- Função `salao-sincronizar`, uma vez por dia (pg_cron, 06:07 de Brasília), lê
+  `apionline.maapp.com.br/companyProfiles/Brunaframeschihair` (JSON público).
+- Espelho 100%: nomes, preços, durações e "a partir de" (campo
+  `onlineSchedulingPriceDisplay = STARTS_AT`) exatamente como lá. De-para pelo
+  id do serviço (`origem_id`). Serviço novo entra ativo; o que some é
+  desativado (não apagado). Cadastros manuais antigos são apagados.
+- Também espelha o horário (`workSchedule`) e as regras de agendamento
+  (antecedência mínima, prazo máximo, política de cancelamento e aviso de
+  tolerância de atraso), na tabela `salao_info`.
+- O endereço NÃO é espelhado: o certo é Rua Ettore Andreazza, 691 (o Minha
+  Agenda mostra outro).
+- Proteções: resposta vazia ou com menos da metade dos serviços não altera
+  nada; e-mail de resumo quando há mudança ou falha; a função não exige JWT
+  (lê só dados públicos) e recusa rodar de novo em menos de 30 min.
+- A aba Serviços da tela ficou só leitura.
