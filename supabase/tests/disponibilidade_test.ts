@@ -58,7 +58,7 @@ Deno.test("primeira consulta: login, cadastro com a identidade fixa e horários 
   const armazem = new ArmazemMemoria();
   const c = new ConsultaMinhaAgenda("KEY", armazem, fake.f, () => 1_000_000);
   const texto = await c.horarios(5732343, "2026-11-10");
-  assertStringIncludes(texto, "Bruna Stefani frameschi: 09:00, 11:00");
+  assertStringIncludes(texto, "Bruna: 09:00, 11:00");
   assertStringIncludes(texto, "Alessandra: sem horários livres");
   assertEquals(fake.cadastros().length, 1);
   const cad = fake.cadastros()[0] as Record<string, unknown>;
@@ -117,4 +117,10 @@ Deno.test("ferramenta valida serviço e data e nunca lança", async () => {
   assertStringIncludes(await ok(5732343, "2026-12-30"), "15 dias");
   const falha = ferramentaHorarios({ horarios: () => Promise.reject(new FalhaConsulta("HTTP 500")) }, new Set([1]), 15, () => {}, agora);
   assertStringIncludes(await falha(1, "2026-11-10"), "mande o link");
+});
+
+Deno.test("primeiro nome da profissional", async () => {
+  const { primeiroNome } = await import("../functions/_shared/disponibilidade.ts");
+  assertEquals(primeiroNome("Bruna Stefani frameschi "), "Bruna");
+  assertEquals(primeiroNome("alessandra"), "Alessandra");
 });

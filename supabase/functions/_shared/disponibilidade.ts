@@ -64,6 +64,12 @@ export function lerVagas(json: unknown): { vagas: Vaga[]; feriado: boolean } {
   return { vagas, feriado: raiz.holiday === true };
 }
 
+/** "Bruna Stefani frameschi" -> "Bruna": é como as clientes chamam. */
+export function primeiroNome(nome: string): string {
+  const p = nome.trim().split(/\s+/)[0] ?? "";
+  return p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : nome;
+}
+
 /** Hoje em São Paulo, AAAA-MM-DD. */
 export function hojeSaoPaulo(agora = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(agora);
@@ -173,7 +179,7 @@ export class ConsultaMinhaAgenda {
         await this.getApi(`availableTimes?serviceIds=${servicoId}&employeeId=${p.id}&date=${data}`),
       );
       if (feriado) return `${data} é feriado: não há atendimento.`;
-      linhas.push(`${p.nome}: ${vagas.length ? vagas.map((v) => v.inicio).join(", ") : "sem horários livres"}`);
+      linhas.push(`${primeiroNome(p.nome)}: ${vagas.length ? vagas.map((v) => v.inicio).join(", ") : "sem horários livres"}`);
     }
     const valor = `Horários livres em ${data} (consulta feita agora; podem ser ocupados a qualquer momento):\n${linhas.join("\n")}`;
     this.cache.set(chave, { em: this.agora(), valor });
