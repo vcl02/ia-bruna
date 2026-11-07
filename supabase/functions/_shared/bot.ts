@@ -125,7 +125,7 @@ export async function processarMensagem(
   try {
     const historico = await deps.repo.historico(c.id, LIMITE_HISTORICO);
     decisao = await deps.atendente.responder(historico, servicos, salao, {
-      ferramentas: deps.ferramentas?.({ conversaId: c.id, waId: c.waId, ultimaMensagem: msg.texto, servicos }),
+      ferramentas: deps.ferramentas?.({ conversaId: c.id, waId: c.waId, ultimaMensagem: msg.texto, ultimaMensagemEm: msg.recebidaEm, servicos }),
       nomeCliente: c.nomePerfil,
     });
   } catch (e) {

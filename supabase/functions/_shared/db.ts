@@ -231,7 +231,7 @@ export class ArmazemSessaoSupabase implements ArmazemSessao {
 type LinhaAgendamento = {
   id: string; conversa_id: string; servico_origem_id: number; servico_nome: string;
   profissional_id: number; profissional_nome: string; data: string; hora: string;
-  preco: string | null; nome_cliente: string; expira_em: string;
+  preco: string | null; nome_cliente: string; expira_em: string; criado_em: string;
 };
 
 function paraProposta(r: LinhaAgendamento): Proposta {
@@ -239,6 +239,7 @@ function paraProposta(r: LinhaAgendamento): Proposta {
     id: r.id, conversaId: r.conversa_id, servicoId: Number(r.servico_origem_id), servicoNome: r.servico_nome,
     profissionalId: Number(r.profissional_id), profissionalNome: r.profissional_nome, data: r.data, hora: r.hora,
     preco: r.preco, nomeCliente: r.nome_cliente, expiraEm: new Date(r.expira_em).getTime(),
+    criadoEm: new Date(r.criado_em).getTime(),
   };
 }
 
@@ -246,7 +247,7 @@ function paraProposta(r: LinhaAgendamento): Proposta {
 export class RepositorioPropostasSupabase implements RepositorioPropostas {
   constructor(private db: SupabaseClient) {}
 
-  async criar(p: Omit<Proposta, "id">): Promise<Proposta> {
+  async criar(p: Omit<Proposta, "id" | "criadoEm">): Promise<Proposta> {
     checar(
       await this.db.from("salao_agendamentos").update({ status: "substituido", atualizado_em: new Date().toISOString() })
         .eq("conversa_id", p.conversaId).eq("status", "proposto"),

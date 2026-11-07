@@ -9,7 +9,7 @@ Deno.test("confirmação: aceita sim claros e recusa dúvida ou negação", () =
   for (const t of ["sim", "Sim!", "SIM pode", "s", "pode marcar", "Confirmo", "ok", "isso mesmo", "👍", "pode sim, obrigada"]) {
     assertEquals(ehConfirmacao(t), true, t);
   }
-  for (const t of ["não", "nao, prefiro outro", "sim, mas não agora", "talvez", "qual o preço?", "", null, "pera", "simone"]) {
+  for (const t of ["não", "nao, prefiro outro", "sim, mas não agora", "talvez", "qual o preço?", "", null, "pera", "simone", "quero às 9 com a Bruna", "quero", "sim, às 11", "sim mas com a Alessandra"]) {
     assertEquals(ehConfirmacao(t), false, String(t));
   }
 });
@@ -52,9 +52,9 @@ Deno.test("agendador: resposta sem CREATED é erro", async () => {
 
 class PropostasMemoria implements RepositorioPropostas {
   itens: Array<Proposta & { status: string }> = [];
-  criar(p: Omit<Proposta, "id">) {
+  criar(p: Omit<Proposta, "id" | "criadoEm">) {
     for (const x of this.itens) if (x.conversaId === p.conversaId && x.status === "proposto") x.status = "substituido";
-    const n = { ...p, id: `p${this.itens.length + 1}`, status: "proposto" };
+    const n = { ...p, id: `p${this.itens.length + 1}`, status: "proposto", criadoEm: AGORA.getTime() };
     this.itens.push(n);
     return Promise.resolve(n);
   }
@@ -87,10 +87,11 @@ function cenario(ultimaMensagem: string, opcoes: { livre?: boolean; falharAgenda
     maxDias: 15,
     agora: () => AGORA,
   };
-  const ctx = (msg: string) => ({ conversaId: "c1", waId: "5511992090474", ultimaMensagem: msg, servicos: SERVICOS });
+  // Por padrão a mensagem da cliente chega 1 min depois da proposta (resposta seguinte).
+  const ctx = (msg: string, em: Date) => ({ conversaId: "c1", waId: "5511992090474", ultimaMensagem: msg, ultimaMensagemEm: em, servicos: SERVICOS });
   return {
     propostas, agendados, avisos,
-    ferramentas: (msg = ultimaMensagem) => montarFerramentas(ctx(msg), deps),
+    ferramentas: (msg = ultimaMensagem, em = new Date(AGORA.getTime() + 60_000)) => montarFerramentas(ctx(msg, em), deps),
     ocupar: () => { livre = false; },
   };
 }
@@ -103,7 +104,7 @@ Deno.test("oferece as três ferramentas quando o agendamento está ligado", () =
 });
 
 Deno.test("só consulta quando o agendamento está desligado", async () => {
-  const f = montarFerramentas({ conversaId: "c1", waId: "5511992090474", ultimaMensagem: "sim", servicos: SERVICOS },
+  const f = montarFerramentas({ conversaId: "c1", waId: "5511992090474", ultimaMensagem: "sim", ultimaMensagemEm: AGORA, servicos: SERVICOS },
     { consulta: { vagas: () => Promise.reject(new Error("x")) }, avisar: () => Promise.resolve(), log: () => {}, maxDias: 15, agora: () => AGORA });
   assertEquals(f.definicoes.map((d) => d.name), ["consultar_horarios"]);
   assertStringIncludes(await f.executar("confirmar_agendamento", {}), "desconhecida");
@@ -128,6 +129,23 @@ Deno.test("TRAVA: sem 'sim' da cliente não agenda, mesmo que o modelo peça", a
   assertStringIncludes(r, "Nada foi agendado");
   assertEquals(c.agendados.length, 0);
   assertEquals(c.propostas.itens[0].status, "proposto");
+});
+
+Deno.test("TRAVA: propor e confirmar na mesma resposta não agenda (caso real de 07/11)", async () => {
+  // A cliente escolheu o horário e o modelo chamou as duas ferramentas seguidas.
+  const c = cenario("x");
+  const f = c.ferramentas("sim");
+  await f.executar("propor_agendamento", PROPOSTA);
+  assertStringIncludes(await f.executar("confirmar_agendamento", {}), "ainda não viu o resumo");
+  assertEquals(c.agendados.length, 0);
+  assertEquals(c.propostas.itens[0].status, "proposto");
+});
+
+Deno.test("TRAVA: proposta feita depois da última mensagem da cliente não agenda", async () => {
+  const c = cenario("x");
+  await c.ferramentas().executar("propor_agendamento", PROPOSTA);
+  assertStringIncludes(await c.ferramentas("sim", new Date(AGORA.getTime() - 1000)).executar("confirmar_agendamento", {}), "não respondeu ao resumo");
+  assertEquals(c.agendados.length, 0);
 });
 
 Deno.test("TRAVA: sem proposta pendente não agenda", async () => {

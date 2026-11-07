@@ -87,8 +87,10 @@ const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "");
 export function ehConfirmacao(texto: string | null | undefined): boolean {
   if (!texto) return false;
   const t = semAcento(texto).toLowerCase().replace(/[^\p{L}\p{N}\s👍✅]/gu, " ").replace(/\s+/g, " ").trim();
-  if (!t || /\b(nao|n|nem|espera|perai|pera|cancela|depois)\b/.test(t)) return false;
-  return /^(sim|s|ss|sim sim|isso|isso mesmo|pode|pode sim|pode ser|pode marcar|pode agendar|confirmo|confirmado|confirma|ok|okay|beleza|blz|claro|fechado|combinado|perfeito|quero|bora|👍|✅)(?=\s|$)/u.test(t);
+  if (!t || /\b(nao|n|nem|espera|perai|pera|cancela|depois|mas|ou|outro|outra|troca|trocar|muda|mudar|prefiro)\b/.test(t)) return false;
+  // Número na mensagem = cliente ainda escolhendo horário/dia ("quero às 9"), não confirmando.
+  if (/\d/.test(t)) return false;
+  return /^(sim|s|ss|sim sim|isso|isso mesmo|pode|pode sim|pode ser|pode marcar|pode agendar|confirmo|confirmado|confirma|ok|okay|beleza|blz|claro|fechado|combinado|perfeito|👍|✅)(?=\s|$)/u.test(t);
 }
 
 /** wa_id brasileiro (5511999998888) -> telefone nacional (11999998888). Outros países: null. */
@@ -113,11 +115,12 @@ export interface Proposta {
   preco: string | null;
   nomeCliente: string;
   expiraEm: number; // epoch ms
+  criadoEm: number; // epoch ms
 }
 
 export interface RepositorioPropostas {
   /** Grava a proposta e marca como "substituido" qualquer proposta pendente anterior da conversa. */
-  criar(p: Omit<Proposta, "id">): Promise<Proposta>;
+  criar(p: Omit<Proposta, "id" | "criadoEm">): Promise<Proposta>;
   /** Proposta com status "proposto" mais recente da conversa, se houver. */
   pendente(conversaId: string): Promise<Proposta | null>;
   /** Troca o status só se o atual for `de` (evita agendar duas vezes). Devolve se trocou. */
@@ -172,6 +175,7 @@ export interface ContextoConversa {
   conversaId: string;
   waId: string;
   ultimaMensagem: string | null;
+  ultimaMensagemEm: Date; // quando a última mensagem da cliente chegou
   servicos: Servico[];
 }
 
@@ -192,6 +196,7 @@ export function montarFerramentas(ctx: ContextoConversa, deps: DepsFerramentas):
   const agora = deps.agora ?? (() => new Date());
   const servicoPorId = new Map(ctx.servicos.flatMap((s) => (s.origem_id ? [[s.origem_id, s] as const] : [])));
   const podeAgendar = !!(deps.agendador && deps.propostas);
+  let propostaNestaResposta = false;
 
   async function agendaOuErro(servicoId: number, data: string, semCache = false): Promise<Agenda | string> {
     if (!servicoPorId.has(servicoId)) return "serviço não encontrado na lista: confirme com a cliente qual serviço ela quer";
@@ -231,6 +236,7 @@ export function montarFerramentas(ctx: ContextoConversa, deps: DepsFerramentas):
       conversaId: ctx.conversaId, servicoId, servicoNome: s.nome, profissionalId: p.id, profissionalNome: p.nome,
       data, hora, preco: s.preco ?? null, nomeCliente: nome, expiraEm: agora().getTime() + VALIDADE_PROPOSTA_MS,
     });
+    propostaNestaResposta = true;
     deps.log("proposta_criada", { conversa: ctx.conversaId, proposta: proposta.id });
     return `Proposta registrada (vale 10 minutos): ${s.nome}, ${data} às ${hora} com ${p.nome}` +
       `${s.preco ? `, ${s.preco}` : ""}, no nome de ${nome}. Mande esse resumo para a cliente e peça para ela responder SIM para confirmar. ` +
@@ -238,11 +244,19 @@ export function montarFerramentas(ctx: ContextoConversa, deps: DepsFerramentas):
   }
 
   async function confirmar(): Promise<string> {
+    // TRAVA: a cliente precisa ter VISTO o resumo. Proposta feita nesta mesma resposta,
+    // ou depois da última mensagem dela, ainda não foi mostrada.
+    if (propostaNestaResposta) {
+      return "a cliente ainda não viu o resumo: mande o resumo e peça para ela responder SIM. Nada foi agendado.";
+    }
     const proposta = await deps.propostas!.pendente(ctx.conversaId);
     if (!proposta) return "não há proposta pendente: confirme com a cliente serviço, dia e horário e use propor_agendamento";
     if (proposta.expiraEm < agora().getTime()) {
       await deps.propostas!.mudarStatus(proposta.id, "proposto", "expirado");
       return "a proposta expirou: consulte de novo e faça uma nova proposta";
+    }
+    if (proposta.criadoEm >= ctx.ultimaMensagemEm.getTime()) {
+      return "a cliente ainda não respondeu ao resumo: mande o resumo e peça para ela responder SIM. Nada foi agendado.";
     }
     if (!ehConfirmacao(ctx.ultimaMensagem)) {
       return "a última mensagem da cliente não é uma confirmação clara: peça para ela responder SIM ao resumo. Nada foi agendado.";
