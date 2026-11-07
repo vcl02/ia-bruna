@@ -3,6 +3,7 @@
 
 import { Anthropic } from "./deps.ts";
 import type { DadosSalao, Servico } from "./salao.ts";
+import type { Ferramentas } from "./agendamento.ts";
 
 export const MODELO = "claude-sonnet-5-5";
 
@@ -20,30 +21,19 @@ export interface ItemHistorico {
   texto: string;
 }
 
-export type ConsultarHorarios = (servicoId: number, data: string) => Promise<string>;
+export interface OpcoesResposta {
+  /** Ferramentas da conversa (consultar/propor/confirmar). Ausente = sem ferramentas. */
+  ferramentas?: Ferramentas;
+  /** Nome no perfil do WhatsApp (usado para agendar). */
+  nomeCliente?: string | null;
+}
 
 /** Interface para permitir testes sem chamar a API. */
 export interface Atendente {
-  responder(historico: ItemHistorico[], servicos: Servico[], salao: DadosSalao, consultar?: ConsultarHorarios): Promise<DecisaoLLM>;
+  responder(historico: ItemHistorico[], servicos: Servico[], salao: DadosSalao, opcoes?: OpcoesResposta): Promise<DecisaoLLM>;
 }
 
-const FERRAMENTA_HORARIOS = {
-  name: "consultar_horarios",
-  description:
-    "Consulta no sistema de agendamento os horários livres de UM serviço numa data, por profissional. " +
-    "Use quando a cliente perguntar se tem horário/vaga num dia. Precisa do id do serviço (da lista de serviços) e da data.",
-  strict: true,
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      servico_id: { type: "integer", description: "id do serviço, como aparece entre colchetes na lista de serviços" },
-      data: { type: "string", description: "data no formato AAAA-MM-DD" },
-    },
-    required: ["servico_id", "data"],
-    additionalProperties: false,
-  },
-};
-const MAX_CONSULTAS = 3;
+const MAX_RODADAS_FERRAMENTA = 4;
 
 const SCHEMA = {
   type: "object",
@@ -85,12 +75,14 @@ ${servicos}
 
 O que fazer:
 1. Tirar dúvidas usando SOMENTE os dados acima.
-2. Entender qual serviço a cliente quer e, quando ela quiser agendar, confirmar o serviço e mandar o link de agendamento. Você não marca horários: quem agenda é a cliente, pelo link.
-3. Horários livres: se a cliente perguntar se tem vaga num dia e a ferramenta consultar_horarios estiver disponível, use-a com o id do serviço e a data. Se ela não disse o serviço ou o dia, pergunte antes. Passe os horários dizendo com qual profissional é cada um (a consulta vem separada por profissional) e que é o que aparece agora; ela garante pelo link, você não reserva nada. Nunca diga horários livres sem consultar. Se a consulta falhar ou a ferramenta não estiver disponível, mande o link.
+2. Entender qual serviço a cliente quer.
+3. Horários livres: se a cliente perguntar se tem vaga num dia e a ferramenta consultar_horarios estiver disponível, use-a com o id do serviço e a data. Se ela não disse o serviço ou o dia, pergunte antes. Passe os horários dizendo com qual profissional é cada um e que é o que aparece agora. Nunca diga horários livres sem consultar. Se a consulta falhar ou a ferramenta não estiver disponível, mande o link de agendamento.
+4. Agendar: se as ferramentas propor_agendamento e confirmar_agendamento estiverem disponíveis e a cliente escolher serviço, dia, horário e profissional, chame propor_agendamento (nome_cliente = nome do perfil informado no fim destas instruções; se não houver nome, pergunte antes). Mande à cliente o resumo que a ferramenta devolver e peça para responder SIM. Só chame confirmar_agendamento quando a mensagem da cliente for a confirmação desse resumo. Só diga que está agendado se confirmar_agendamento devolver AGENDADO. Se as ferramentas de agendamento não estiverem disponíveis, mande o link para ela agendar.
+5. Remarcar ou cancelar: você não faz; diga que a Bruna vai ajudar e marque passar_para_humano = true.
 
 Regras:
 - Nunca invente serviço, preço, horário, promoção, disponibilidade ou qualquer dado que não esteja em <dados_do_salao>. Se a resposta não estiver lá, diga que vai chamar alguém do salão e marque passar_para_humano = true.
-- Marque passar_para_humano = true também quando a cliente pedir para falar com uma pessoa, reclamar, quiser remarcar ou cancelar, mandar algo que você não entende, ou quando você estiver em dúvida.
+- Marque passar_para_humano = true também quando a cliente pedir para falar com uma pessoa, reclamar, mandar algo que você não entende, quando uma ferramenta pedir, ou quando você estiver em dúvida.
 - Assuntos fora do salão: responda com educação que só pode ajudar com assuntos do salão. Isso não precisa de humano.
 - Não peça dados pessoais (CPF, endereço, documentos). Não dê orientação médica ou de saúde.
 - A apresentação como assistente virtual já é enviada automaticamente antes da sua primeira resposta e já cumprimenta a cliente: não se apresente nem cumprimente de novo. Só cumprimente se a cliente cumprimentar depois de um tempo.
@@ -101,7 +93,7 @@ Estilo (para não soar como robô):
 - Escreva como uma pessoa real escreveria no WhatsApp. Varie as aberturas, as frases e as despedidas; não repita a estrutura da sua mensagem anterior nem copie frases prontas de mensagens anteriores.
 - Emojis: no máximo um por mensagem e só em parte das mensagens. Varie (por exemplo 💖 ✨ 🥰 😊 🌸) e não repita o emoji da sua mensagem anterior. Se o emoji for de um serviço, ele tem que combinar com o assunto: 💅 só para unhas, 💇‍♀️ só para cabelo. Não coloque emoji no fim de toda mensagem.
 - Chame de "amor" ou "linda" só de vez em quando, não em toda mensagem.
-- Mande o link de agendamento quando a cliente quiser agendar ou perguntar como agendar. Se você já mandou o link nas últimas mensagens, não repita, a menos que ela peça.
+- Não repita o link de agendamento se já mandou nas últimas mensagens, a menos que ela peça.
 
 Saída: preencha "resposta" com a mensagem a enviar à cliente, "passar_para_humano", "motivo" (curto, para a equipe ler) e "intencao".`;
 }
@@ -116,6 +108,13 @@ export function agoraEmSaoPaulo(agora: Date = new Date()): string {
     timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(agora);
   return `${dia}, ${data}, ${hora}`;
+}
+
+export function blocoContexto(agora: Date, nomeCliente: string | null | undefined): string {
+  const nome = nomeCliente?.trim()
+    ? `Nome da cliente no perfil do WhatsApp: ${nomeCliente.trim()}.`
+    : "A cliente não tem nome no perfil do WhatsApp: pergunte o nome antes de propor um agendamento.";
+  return `${blocoAgora(agora)}\n${nome}`;
 }
 
 export function blocoAgora(agora: Date = new Date()): string {
@@ -167,17 +166,17 @@ export class AtendenteClaude implements Atendente {
     historico: ItemHistorico[],
     servicos: Servico[],
     salao: DadosSalao,
-    consultar?: ConsultarHorarios,
+    opcoes: OpcoesResposta = {},
   ): Promise<DecisaoLLM> {
+    const { ferramentas, nomeCliente } = opcoes;
     const messages: Anthropic.Beta.Messages.BetaMessageParam[] = montarMensagens(historico);
     if (messages.length === 0) throw new FalhaLLM("histórico sem mensagem da cliente");
-    // Parte fixa primeiro (com cache) e a data/hora por último, para a hora
-    // que muda a cada minuto não invalidar o cache das instruções.
+    // Parte fixa primeiro (com cache) e o contexto que muda (hora, nome) por último.
     const system: Anthropic.Beta.Messages.BetaTextBlockParam[] = [
       { type: "text", text: montarSistema(salao, servicos), cache_control: { type: "ephemeral" } },
-      { type: "text", text: blocoAgora(this.relogio()) },
+      { type: "text", text: blocoContexto(this.relogio(), nomeCliente) },
     ];
-    for (let rodada = 0; rodada <= MAX_CONSULTAS; rodada++) {
+    for (let rodada = 0; rodada <= MAX_RODADAS_FERRAMENTA; rodada++) {
       const resp = await this.client.beta.messages.create({
         model: MODELO,
         max_tokens: 4096,
@@ -187,16 +186,16 @@ export class AtendenteClaude implements Atendente {
           effort: "medium",
           format: { type: "json_schema", schema: SCHEMA },
         },
-        ...(consultar ? { tools: [FERRAMENTA_HORARIOS] } : {}),
+        ...(ferramentas?.definicoes.length ? { tools: ferramentas.definicoes } : {}),
         system,
         messages,
       });
-      if (resp.stop_reason === "tool_use" && consultar && rodada < MAX_CONSULTAS) {
+      if (resp.stop_reason === "tool_use" && ferramentas && rodada < MAX_RODADAS_FERRAMENTA) {
         const resultados: Anthropic.Beta.Messages.BetaToolResultBlockParam[] = [];
         for (const bloco of resp.content) {
           if (bloco.type !== "tool_use") continue;
-          const entrada = bloco.input as { servico_id?: unknown; data?: unknown };
-          const conteudo = await consultar(Number(entrada.servico_id), String(entrada.data ?? ""));
+          const entrada = (bloco.input && typeof bloco.input === "object" ? bloco.input : {}) as Record<string, unknown>;
+          const conteudo = await ferramentas.executar(bloco.name, entrada);
           resultados.push({ type: "tool_result", tool_use_id: bloco.id, content: conteudo });
         }
         // Devolve o turno do modelo sem alterar (inclui blocos de raciocínio) + os resultados.
@@ -205,7 +204,7 @@ export class AtendenteClaude implements Atendente {
       }
       return interpretar(resp);
     }
-    throw new FalhaLLM("consultas de horário demais numa resposta");
+    throw new FalhaLLM("chamadas de ferramenta demais numa resposta");
   }
 }
 

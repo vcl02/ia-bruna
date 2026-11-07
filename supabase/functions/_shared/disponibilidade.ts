@@ -87,10 +87,43 @@ export function validarData(data: string, maxDias: number, agora = new Date()): 
   return null;
 }
 
-// ---------- cliente ----------
+// ---------- login e cadastro (também usados no agendamento) ----------
+
+export async function loginAnonimo(
+  firebaseKey: string,
+  fetchFn: typeof fetch = fetch,
+  agora: () => number = () => Date.now(),
+): Promise<Sessao> {
+  const r = await fetchFn(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ returnSecureToken: true }),
+  });
+  const j = obj(await r.json().catch(() => ({})));
+  if (!r.ok || typeof j.idToken !== "string" || typeof j.refreshToken !== "string") {
+    throw new FalhaConsulta(`login anônimo falhou (HTTP ${r.status})`);
+  }
+  return { idToken: j.idToken, refreshToken: j.refreshToken, expiraEm: agora() + Number(j.expiresIn ?? 3600) * 1000, cadastrado: false };
+}
+
+export interface Identidade { name: string; phone: string; countryIso: string }
+
+export async function cadastrarConvidada(idToken: string, identidade: Identidade, fetchFn: typeof fetch = fetch): Promise<void> {
+  const r = await fetchFn(`${API}/accounts/firebaseGuestSignUp`, {
+    method: "POST",
+    headers: { ...cabecalhosApi(), "content-type": "application/json" },
+    body: JSON.stringify({ ...identidade, email: null, accessToken: idToken, slug: SLUG }),
+  });
+  await r.body?.cancel();
+  if (!r.ok) throw new FalhaConsulta(`cadastro de convidada falhou (HTTP ${r.status})`);
+}
+
+export { API, cabecalhosApi };
+
+// ---------- cliente de consulta ----------
 
 export class ConsultaMinhaAgenda {
-  private cache = new Map<string, { em: number; valor: string }>();
+  private cache = new Map<string, { em: number; valor: Agenda }>();
 
   constructor(
     private firebaseKey: string,
@@ -99,17 +132,8 @@ export class ConsultaMinhaAgenda {
     private agora: () => number = () => Date.now(),
   ) {}
 
-  private async loginAnonimo(): Promise<Sessao> {
-    const r = await this.fetchFn(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${this.firebaseKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ returnSecureToken: true }),
-    });
-    const j = obj(await r.json().catch(() => ({})));
-    if (!r.ok || typeof j.idToken !== "string" || typeof j.refreshToken !== "string") {
-      throw new FalhaConsulta(`login anônimo falhou (HTTP ${r.status})`);
-    }
-    return { idToken: j.idToken, refreshToken: j.refreshToken, expiraEm: this.agora() + Number(j.expiresIn ?? 3600) * 1000, cadastrado: false };
+  private loginAnonimo(): Promise<Sessao> {
+    return loginAnonimo(this.firebaseKey, this.fetchFn, this.agora);
   }
 
   private async renovar(s: Sessao): Promise<Sessao | null> {
@@ -129,13 +153,7 @@ export class ConsultaMinhaAgenda {
   }
 
   private async cadastrarConvidada(s: Sessao): Promise<Sessao> {
-    const r = await this.fetchFn(`${API}/accounts/firebaseGuestSignUp`, {
-      method: "POST",
-      headers: { ...cabecalhosApi(), "content-type": "application/json" },
-      body: JSON.stringify({ ...IDENTIDADE, email: null, accessToken: s.idToken, slug: SLUG }),
-    });
-    await r.body?.cancel();
-    if (!r.ok) throw new FalhaConsulta(`cadastro de convidada falhou (HTTP ${r.status})`);
+    await cadastrarConvidada(s.idToken, IDENTIDADE, this.fetchFn);
     return { ...s, cadastrado: true };
   }
 
@@ -159,54 +177,42 @@ export class ConsultaMinhaAgenda {
     throw new FalhaConsulta("Minha Agenda recusou a sessão");
   }
 
-  /**
-   * Horários livres de um serviço numa data, por profissional, em texto para o
-   * modelo. Cache de 5 min por serviço+data.
-   */
-  async horarios(servicoId: number, data: string): Promise<string> {
+  /** Vagas por profissional. Cache de 5 min por serviço+data, a menos que `semCache`. */
+  async vagas(servicoId: number, data: string, semCache = false): Promise<Agenda> {
     const chave = `${servicoId}|${data}`;
     const c = this.cache.get(chave);
-    if (c && this.agora() - c.em < 5 * 60_000) return c.valor;
+    if (!semCache && c && this.agora() - c.em < 5 * 60_000) return c.valor;
 
     const profissionais = lerProfissionais(
       await this.getApi(`availableEmployeesByService?serviceIds=${servicoId}&date=${data}`),
     );
-    if (profissionais.length === 0) return `Em ${data} ninguém atende esse serviço pelo agendamento online.`;
-
-    const linhas: string[] = [];
+    const agenda: Agenda = { data, feriado: false, profissionais: [] };
     for (const p of profissionais) {
       const { vagas, feriado } = lerVagas(
         await this.getApi(`availableTimes?serviceIds=${servicoId}&employeeId=${p.id}&date=${data}`),
       );
-      if (feriado) return `${data} é feriado: não há atendimento.`;
-      linhas.push(`${primeiroNome(p.nome)}: ${vagas.length ? vagas.map((v) => v.inicio).join(", ") : "sem horários livres"}`);
+      if (feriado) { agenda.feriado = true; agenda.profissionais = []; break; }
+      agenda.profissionais.push({ id: p.id, nome: primeiroNome(p.nome), horarios: vagas.map((v) => v.inicio) });
     }
-    const valor = `Horários livres em ${data} (consulta feita agora; podem ser ocupados a qualquer momento):\n${linhas.join("\n")}`;
-    this.cache.set(chave, { em: this.agora(), valor });
-    return valor;
+    this.cache.set(chave, { em: this.agora(), valor: agenda });
+    return agenda;
+  }
+
+  /** Horários livres em texto para o modelo. */
+  async horarios(servicoId: number, data: string): Promise<string> {
+    return agendaEmTexto(await this.vagas(servicoId, data));
   }
 }
 
-/**
- * Função que o modelo chama (ferramenta consultar_horarios). Valida o serviço e a
- * data antes de consultar e nunca lança: devolve sempre um texto para o modelo.
- */
-export function ferramentaHorarios(
-  consulta: Pick<ConsultaMinhaAgenda, "horarios">,
-  idsValidos: Set<number>,
-  maxDias: number,
-  log: (evento: string, dados?: Record<string, unknown>) => void = () => {},
-  agora: () => Date = () => new Date(),
-): (servicoId: number, data: string) => Promise<string> {
-  return async (servicoId, data) => {
-    if (!idsValidos.has(servicoId)) return "serviço não encontrado na lista: confirme com a cliente qual serviço ela quer";
-    const erro = validarData(data, maxDias, agora());
-    if (erro) return erro;
-    try {
-      return await consulta.horarios(servicoId, data);
-    } catch (e) {
-      log("erro_consulta_horarios", { erro: String(e) });
-      return "não foi possível consultar a agenda agora: mande o link de agendamento para a cliente ver os horários";
-    }
-  };
+export interface Agenda {
+  data: string;
+  feriado: boolean;
+  profissionais: Array<{ id: number; nome: string; horarios: string[] }>;
+}
+
+export function agendaEmTexto(a: Agenda): string {
+  if (a.feriado) return `${a.data} é feriado: não há atendimento.`;
+  if (a.profissionais.length === 0) return `Em ${a.data} ninguém atende esse serviço pelo agendamento online.`;
+  const linhas = a.profissionais.map((p) => `${p.nome}: ${p.horarios.length ? p.horarios.join(", ") : "sem horários livres"}`);
+  return `Horários livres em ${a.data} (consulta feita agora; podem ser ocupados a qualquer momento):\n${linhas.join("\n")}`;
 }

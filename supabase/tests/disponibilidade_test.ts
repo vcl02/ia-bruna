@@ -107,18 +107,6 @@ Deno.test("erro do Minha Agenda vira FalhaConsulta", async () => {
   await assertRejects(() => c.horarios(1, "2026-11-10"), FalhaConsulta, "HTTP 500");
 });
 
-import { ferramentaHorarios } from "../functions/_shared/disponibilidade.ts";
-
-Deno.test("ferramenta valida serviço e data e nunca lança", async () => {
-  const agora = () => new Date("2026-11-07T12:00:00Z");
-  const ok = ferramentaHorarios({ horarios: (id, d) => Promise.resolve(`${id} ${d}`) }, new Set([5732343]), 15, () => {}, agora);
-  assertEquals(await ok(5732343, "2026-11-10"), "5732343 2026-11-10");
-  assertStringIncludes(await ok(999, "2026-11-10"), "serviço não encontrado");
-  assertStringIncludes(await ok(5732343, "2026-12-30"), "15 dias");
-  const falha = ferramentaHorarios({ horarios: () => Promise.reject(new FalhaConsulta("HTTP 500")) }, new Set([1]), 15, () => {}, agora);
-  assertStringIncludes(await falha(1, "2026-11-10"), "mande o link");
-});
-
 Deno.test("primeiro nome da profissional", async () => {
   const { primeiroNome } = await import("../functions/_shared/disponibilidade.ts");
   assertEquals(primeiroNome("Bruna Stefani frameschi "), "Bruna");

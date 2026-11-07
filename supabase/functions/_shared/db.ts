@@ -6,6 +6,7 @@ import type { Servico } from "./salao.ts";
 import type { Conversa, Repositorio } from "./bot.ts";
 import type { ItemHistorico } from "./llm.ts";
 import type { ArmazemSessao, Sessao } from "./disponibilidade.ts";
+import type { Proposta, RepositorioPropostas } from "./agendamento.ts";
 
 export function clienteServico(): SupabaseClient {
   return createClient(exigirEnv("SUPABASE_URL"), exigirEnv("SUPABASE_SERVICE_ROLE_KEY"), {
@@ -224,5 +225,63 @@ export class ArmazemSessaoSupabase implements ArmazemSessao {
         atualizado_em: new Date().toISOString(),
       }),
     );
+  }
+}
+
+type LinhaAgendamento = {
+  id: string; conversa_id: string; servico_origem_id: number; servico_nome: string;
+  profissional_id: number; profissional_nome: string; data: string; hora: string;
+  preco: string | null; nome_cliente: string; expira_em: string;
+};
+
+function paraProposta(r: LinhaAgendamento): Proposta {
+  return {
+    id: r.id, conversaId: r.conversa_id, servicoId: Number(r.servico_origem_id), servicoNome: r.servico_nome,
+    profissionalId: Number(r.profissional_id), profissionalNome: r.profissional_nome, data: r.data, hora: r.hora,
+    preco: r.preco, nomeCliente: r.nome_cliente, expiraEm: new Date(r.expira_em).getTime(),
+  };
+}
+
+/** Propostas e agendamentos do bot (tabela salao_agendamentos). */
+export class RepositorioPropostasSupabase implements RepositorioPropostas {
+  constructor(private db: SupabaseClient) {}
+
+  async criar(p: Omit<Proposta, "id">): Promise<Proposta> {
+    checar(
+      await this.db.from("salao_agendamentos").update({ status: "substituido", atualizado_em: new Date().toISOString() })
+        .eq("conversa_id", p.conversaId).eq("status", "proposto"),
+    );
+    const r = checar(
+      await this.db.from("salao_agendamentos").insert({
+        conversa_id: p.conversaId, servico_origem_id: p.servicoId, servico_nome: p.servicoNome,
+        profissional_id: p.profissionalId, profissional_nome: p.profissionalNome, data: p.data, hora: p.hora,
+        preco: p.preco, nome_cliente: p.nomeCliente, status: "proposto", expira_em: new Date(p.expiraEm).toISOString(),
+      }).select("*").single(),
+    ) as LinhaAgendamento;
+    return paraProposta(r);
+  }
+
+  async pendente(conversaId: string): Promise<Proposta | null> {
+    const r = checar(
+      await this.db.from("salao_agendamentos").select("*").eq("conversa_id", conversaId).eq("status", "proposto")
+        .order("criado_em", { ascending: false }).limit(1),
+    ) as LinhaAgendamento[];
+    return r[0] ? paraProposta(r[0]) : null;
+  }
+
+  async mudarStatus(id: string, de: string, para: string, detalhe?: string): Promise<boolean> {
+    const r = checar(
+      await this.db.from("salao_agendamentos")
+        .update({ status: para, atualizado_em: new Date().toISOString(), ...(detalhe ? { detalhe } : {}) })
+        .eq("id", id).eq("status", de).select("id"),
+    ) as unknown[];
+    return r.length > 0;
+  }
+
+  async agendadosDesde(conversaId: string, desde: Date): Promise<number> {
+    const { count, error } = await this.db.from("salao_agendamentos").select("id", { count: "exact", head: true })
+      .eq("conversa_id", conversaId).eq("status", "agendado").gte("atualizado_em", desde.toISOString());
+    if (error) throw error;
+    return count ?? 0;
   }
 }

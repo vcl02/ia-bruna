@@ -5,10 +5,11 @@
 
 import { assinaturaValida } from "../_shared/assinatura.ts";
 import { enviarTexto, filtrarPorPermitidos, lerEventos, lerPermitidos, type ConfigWhatsApp } from "../_shared/whatsapp.ts";
-import { ArmazemSessaoSupabase, clienteServico, exigirEnv, RepositorioSupabase } from "../_shared/db.ts";
-import { ConsultaMinhaAgenda, ferramentaHorarios } from "../_shared/disponibilidade.ts";
+import { ArmazemSessaoSupabase, clienteServico, exigirEnv, RepositorioPropostasSupabase, RepositorioSupabase } from "../_shared/db.ts";
+import { ConsultaMinhaAgenda } from "../_shared/disponibilidade.ts";
+import { AgendadorMinhaAgenda, montarFerramentas } from "../_shared/agendamento.ts";
 import { processarMensagem, type DepsBot } from "../_shared/bot.ts";
-import { avisarEquipe, enviarEmailResend, lerConfigAviso } from "../_shared/aviso.ts";
+import { avisarEquipe, enviarEmailResend, enviarResumo, lerConfigAviso } from "../_shared/aviso.ts";
 import { AtendenteClaude } from "../_shared/llm.ts";
 import { SALAO } from "../_shared/salao.ts";
 
@@ -64,9 +65,11 @@ export async function tratar(req: Request): Promise<Response> {
   );
   const db = clienteServico();
   const repo = new RepositorioSupabase(db);
-  // Consulta de horários livres: só liga se a chave do Firebase do Minha Agenda estiver configurada.
+  // Consulta e agendamento no Minha Agenda: só ligam com a chave do Firebase configurada.
+  // O agendamento pode ser desligado à parte com SALAO_AGENDAR=nao.
   const chaveFirebase = Deno.env.get("SALAO_MA_FIREBASE_KEY");
   const consulta = chaveFirebase ? new ConsultaMinhaAgenda(chaveFirebase, new ArmazemSessaoSupabase(db)) : null;
+  const agendarLigado = !!chaveFirebase && Deno.env.get("SALAO_AGENDAR") !== "nao";
   const aviso = lerConfigAviso((n) => Deno.env.get(n));
 
   for (const s of eventos.statuses) {
@@ -82,13 +85,15 @@ export async function tratar(req: Request): Promise<Response> {
     enviar: (para, texto) => enviarTexto(wa, para, texto),
     avisar: (c, motivo) => avisarEquipe(aviso, { enviarEmail: (cfg, e) => enviarEmailResend(cfg, e), log }, c, motivo),
     esperar: (ms) => new Promise((r) => setTimeout(r, ms)),
-    consultarHorarios: consulta
-      ? (servicos) => ferramentaHorarios(
+    ferramentas: consulta
+      ? (ctx) => montarFerramentas(ctx, {
         consulta,
-        new Set(servicos.flatMap((s) => (s.origem_id ? [s.origem_id] : []))),
-        15, // o agendamento online abre até 15 dias à frente (Minha Agenda)
+        agendador: agendarLigado ? new AgendadorMinhaAgenda(chaveFirebase!) : undefined,
+        propostas: agendarLigado ? new RepositorioPropostasSupabase(db) : undefined,
+        avisar: (assunto, texto) => enviarResumo(aviso, { enviarEmail: (cfg, e) => enviarEmailResend(cfg, e), log }, assunto, texto),
         log,
-      )
+        maxDias: 15, // o agendamento online abre até 15 dias à frente (Minha Agenda)
+      })
       : undefined,
     log,
   };

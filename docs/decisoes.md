@@ -106,3 +106,19 @@ Registro curto. Data = quando foi decidido ou registrado aqui.
 - Risco aceito: API exige sessão e não é documentada; pode mudar sem aviso.
 - Equipe no prompt: Alessandra (manicure e pedicure), Bruna (cabelo, massagem e
   o resto).
+
+## 2026-11-07 — Agendamento pelo bot (com confirmação da cliente)
+- Bruna de acordo; aviso por e-mail ao Victor a cada agendamento.
+- Duas etapas: `propor_agendamento` confere a vaga (sem cache) e grava uma
+  proposta em `salao_agendamentos` (vale 10 min; nova proposta substitui a
+  anterior). `confirmar_agendamento` só agenda se houver proposta pendente E a
+  última mensagem da cliente for uma confirmação clara (`ehConfirmacao`). A
+  trava está no código, não só no prompt.
+- Antes de agendar, confere de novo se o horário está livre.
+- O agendamento usa cadastro de convidada com o NOME DO PERFIL do WhatsApp
+  (decisão do Victor) e o telefone da conversa, como se a cliente agendasse
+  pelo site. Comentário: "Agendado pelo assistente virtual do WhatsApp".
+- Limite: 1 agendamento pelo bot por conversa a cada 24 h. Remarcar/cancelar:
+  humano (o Minha Agenda não deixa a cliente cancelar sozinha).
+- Falha no agendamento => link + passar para humano. `SALAO_AGENDAR=nao`
+  desliga só o agendamento.
