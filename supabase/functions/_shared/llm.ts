@@ -77,7 +77,7 @@ Regras:
 Saída: preencha "resposta" com a mensagem a enviar à cliente, "passar_para_humano", "motivo" (curto, para a equipe ler) e "intencao".`;
 }
 
-/** Data e hora atuais em São Paulo, por extenso. Ex.: "sexta-feira, 07/11/2026, 21:10". */
+/** Data e hora atuais em São Paulo, por extenso. Ex.: "sexta-feira, 06/11/2026, 21:10". */
 export function agoraEmSaoPaulo(agora: Date = new Date()): string {
   const dia = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long" }).format(agora);
   const data = new Intl.DateTimeFormat("pt-BR", {
